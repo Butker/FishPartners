@@ -29,7 +29,7 @@ jobs:
           VERSION="${TAG#v}"
           mkdir -p build/FishPartners
           git archive HEAD | tar -x -C build/FishPartners
-          rm -rf build/FishPartners/.github build/FishPartners/.gitignore build/FishPartners/CHANGELOG.md
+          rm -rf build/FishPartners/.github build/FishPartners/tools build/FishPartners/.gitignore build/FishPartners/.gitattributes
           # stamp the tag version into the packaged TOC
           sed -i "s/^## Version:.*/## Version: ${VERSION}/" build/FishPartners/FishPartners.toc
           (cd build && zip -qr "FishPartners-${VERSION}.zip" FishPartners)

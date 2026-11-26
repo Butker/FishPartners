@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.9.0]
+- New one-click updater for Windows (`tools/Update-FishPartners.bat`): finds WoW Forever, downloads the latest version from GitHub and installs it. It can also run automatically at Windows login.
+- In-game update notice: copies of the addon in your guild or group compare versions, and you get a chat message (plus a ticker line) when a newer version is out. `/fpwm update` shows the download link.
+- The addon version now comes from the .toc file, so it's set in one place only.
+
 ## [1.8.4]
 - Party view: the selected member is highlighted, the haul panel says whose items it shows, and you can click yourself to see your own haul.
 

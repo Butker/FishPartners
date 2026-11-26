@@ -6,7 +6,7 @@ _G.FishPartners = ns
 
 ns.NAME    = "Fish & Partners"
 ns.SUB     = "WEALTH MANAGEMENT"
-ns.VERSION = "1.8.4"
+ns.VERSION = ((C_AddOns and C_AddOns.GetAddOnMetadata) or GetAddOnMetadata or function() end)(ADDON, "Version") or "dev"
 ns.CALLER  = "FishPartners" -- Auctionator API caller id
 
 local floor, abs, format, tostring = math.floor, math.abs, string.format, tostring

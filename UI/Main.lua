@@ -144,7 +144,7 @@ local function BuildStatus(parent)
     eb:SetMaxLetters(32)
     local hint = UI.Text(bar, 10, C.dim, "LEFT")
     hint:SetPoint("LEFT", eb, "LEFT", 0, 0)
-    hint:SetText("PNL AUM PORT RPT GL CMPL · START STOP HUD · HELP  <GO>")
+    hint:SetText("PNL AUM PORT RPT GL CMPL · START STOP HUD UPDATE · HELP  <GO>")
     eb:SetScript("OnEditFocusGained", function() hint:Hide() end)
     eb:SetScript("OnEditFocusLost", function(self) if self:GetText() == "" then hint:Show() end end)
     eb:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
@@ -322,6 +322,16 @@ COMMANDS = {
     PORT = function() ns:ShowPage("port") end,
     RPT = function() ns:ShowPage("rpt") end,
     HUD = function() if ns.HUD then ns.HUD:Toggle() end end,
+    UPDATE = function()
+        local U = ns.Update
+        if U and U.newer then
+            ns.Print("Newest version seen: " .. ns.Color("green", U.newer) .. " (you have " .. ns.VERSION .. ").")
+        else
+            ns.Print("You have " .. ns.VERSION .. ". No newer version seen from guild or group mates yet.")
+        end
+        ns.Print("Updater (download once, then double-click): " .. ns.Color("amber", U and U.UPDATER_URL or ""))
+        ns.Print("Project page: " .. ns.Color("amber", U and U.REPO_URL or ""))
+    end,
     PARTYDEBUG = function()
         if not ns.Party then return end
         ns.Party.debug = not ns.Party.debug
@@ -344,6 +354,9 @@ COMMANDS = {
             .. "   AuctionHouseFrame: " .. yn(AuctionHouseFrame) .. "   AuctionFrame: " .. yn(AuctionFrame))
         P("Auctionator API: " .. yn(ns.HasAuctionator()) .. "   Auctionator selling tab: " .. yn(_G.AuctionatorSellingFrame)
             .. "   Price history API: " .. yn(Auctionator and Auctionator.Database and Auctionator.Database.GetPriceHistory))
+        if ns.Update then
+            P("Update check: newest version seen " .. (ns.Update.newer and ns.Color("green", ns.Update.newer) or "none newer than yours"))
+        end
         local st = ns.Session and ns.Session:Stats() or {}
         P("Session: " .. (st.active and ((st.paused and "paused" or "running") .. " · " .. ns.Duration(st.elapsed or 0)) or "none")
             .. " · ledger entries: " .. #ns.db.ledger)
