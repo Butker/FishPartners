@@ -68,7 +68,7 @@ jobs:
 
           updater = f"https://github.com/{repo}/raw/main/tools/Update-FishPartners.bat"
           payload = {
-              "username": "Fish & Partners Desk",
+              "username": "Vikram",
               "embeds": [{
                   "title": f"📈 Fish & Partners {version} is live",
                   "url": f"https://github.com/{repo}",
