@@ -1,0 +1,43 @@
+# Builds FishPartners-<version>.zip and publishes a GitHub Release whenever a
+# version tag (v1.2.3) is pushed. WowUp installs/updates from these releases.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package addon
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p build/FishPartners
+          git archive HEAD | tar -x -C build/FishPartners
+          rm -rf build/FishPartners/.github build/FishPartners/.gitignore build/FishPartners/CHANGELOG.md
+          # stamp the tag version into the packaged TOC
+          sed -i "s/^## Version:.*/## Version: ${VERSION}/" build/FishPartners/FishPartners.toc
+          (cd build && zip -qr "FishPartners-${VERSION}.zip" FishPartners)
+          # release notes: this version's section from CHANGELOG.md
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[?v?"v"\\]?" {on=1; next}
+            on && /^## / {exit}
+            on {print}
+          ' CHANGELOG.md > build/notes.md || true
+          [ -s build/notes.md ] || echo "Fish & Partners ${VERSION}" > build/notes.md
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "build/FishPartners-${VERSION}.zip" \
+            --title "Fish & Partners ${VERSION}" \
+            --notes-file build/notes.md

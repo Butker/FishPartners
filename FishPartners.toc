@@ -1,0 +1,23 @@
+## Interface: 16001
+## Title: |cfffb8b1eFish & Partners|r Wealth Management
+## Notes: Bloomberg-grade gold analytics. Intraday P&L, Net Worth, Portfolio, Reports, General Ledger.
+## Author: Fish & Partners
+## Version: 1.8.4
+## OptionalDeps: Auctionator
+## SavedVariables: FishPartnersDB
+## SavedVariablesPerCharacter: FishPartnersCharDB
+## IconTexture: Interface\Icons\INV_Misc_Fish_02
+
+Core.lua
+Valuation.lua
+UI\Theme.lua
+UI\Main.lua
+Modules\Ledger.lua
+Modules\Session.lua
+Modules\Party.lua
+Modules\SessionHUD.lua
+Modules\InstanceBell.lua
+Modules\Wealth.lua
+Modules\Portfolio.lua
+Modules\AuctionDesk.lua
+Modules\Settings.lua
