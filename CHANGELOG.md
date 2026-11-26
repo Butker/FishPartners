@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.9.1]
+- Session: quest reward items (including the reward you pick) are now valued and counted, marked REWARD in the loot feed and the mini window. Only items received right at a quest turn-in count, so vendor purchases and crafted items are never mistaken for rewards.
+
 ## [1.9.0]
 - New one-click updater for Windows (`tools/Update-FishPartners.bat`): finds WoW Forever, downloads the latest version from GitHub and installs it. It can also run automatically at Windows login.
 - In-game update notice: copies of the addon in your guild or group compare versions, and you get a chat message (plus a ticker line) when a newer version is out. `/fpwm update` shows the download link.

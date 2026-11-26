@@ -21,6 +21,8 @@ local function toPattern(fmt)
 end
 local PAT_MULTI  = toPattern(LOOT_ITEM_SELF_MULTIPLE) or "^You receive loot: (.+)x(%d+)%.$"
 local PAT_SINGLE = toPattern(LOOT_ITEM_SELF) or "^You receive loot: (.+)%.$"
+local PAT_PUSH_MULTI = toPattern(LOOT_ITEM_PUSHED_SELF_MULTIPLE) or "^You receive item: (.+)x(%d+)%.$"
+local PAT_PUSH       = toPattern(LOOT_ITEM_PUSHED_SELF) or "^You receive item: (.+)%.$"
 
 ---------------------------------------------------------------------------
 -- Session lifecycle
@@ -136,25 +138,65 @@ local function pushTape(s, entry)
     while #s.tape > 60 do table.remove(s.tape) end
 end
 
-ns:On("CHAT_MSG_LOOT", function(msg)
-    if not S:IsRunning() or type(msg) ~= "string" then return end
-    local link, qty = msg:match(PAT_MULTI)
-    if not link then link = msg:match(PAT_SINGLE); qty = 1 end
-    if not link or not link:find("|H") then return end
-    qty = tonumber(qty) or 1
+local function addItem(link, qty, reward)
     local s = sess()
     ns.WhenItemReady(link, function()
-        if sess() ~= s then return end
+        if sess() ~= s or not (s and s.active) then return end
         local unit, src, ah, vendor = ns.Valuate(link)
         unit = unit or 0
         local it = s.items[link]
         if not it then it = { qty = 0 }; s.items[link] = it end
         it.qty = it.qty + qty
         it.unit, it.src, it.ah, it.vendor = unit, src or "---", ah, vendor
+        if reward then it.reward = true end
         s.lootCount = (s.lootCount or 0) + qty
-        pushTape(s, { t = time(), link = link, qty = qty, v = unit * qty, src = src })
+        pushTape(s, { t = time(), link = link, qty = qty, v = unit * qty, src = src, reward = reward or nil })
         ns:Fire("SESSION_UPDATE")
     end)
+end
+
+ns:On("CHAT_MSG_LOOT", function(msg)
+    if not S:IsRunning() or type(msg) ~= "string" then return end
+    local link, qty = msg:match(PAT_MULTI)
+    if not link then link = msg:match(PAT_SINGLE); qty = 1 end
+    if link and link:find("|H") then
+        addItem(link, tonumber(qty) or 1)
+        return
+    end
+    -- Quest reward items arrive as "You receive item: [X]" (a "pushed" item).
+    -- Only count those right around a quest turn-in, never vendor buys or crafts.
+    local plink, pqty = msg:match(PAT_PUSH_MULTI)
+    if not plink then plink = msg:match(PAT_PUSH); pqty = 1 end
+    if plink and plink:find("|H") and S:InQuestWindow() and not S:RecentQuestLoot(plink) then
+        S.pushedReward = S.pushedReward or {}
+        S.pushedReward[plink] = GetTime()
+        addItem(plink, tonumber(pqty) or 1, true)
+    end
+end)
+
+-- Quest reward bookkeeping
+local questTurnIn = 0
+local questLoot = {}   -- link -> GetTime() when QUEST_LOOT_RECEIVED booked it
+
+function S:InQuestWindow()
+    return (GetTime() - questTurnIn) < 4 or (ns.Ledger and ns.Ledger.InCtx("quest", 3))
+end
+
+function S:RecentQuestLoot(link)
+    local t = questLoot[link]
+    return t and (GetTime() - t) < 5
+end
+
+ns:On("QUEST_TURNED_IN", function() questTurnIn = GetTime() end)
+
+-- Modern clients announce reward items directly; book them here and let the
+-- chat line above skip the same item.
+ns:On("QUEST_LOOT_RECEIVED", function(questID, itemLink, quantity)
+    if not S:IsRunning() or type(itemLink) ~= "string" or not itemLink:find("|H") then return end
+    questLoot[itemLink] = GetTime()
+    local pushed = S.pushedReward and S.pushedReward[itemLink]
+    if pushed and GetTime() - pushed < 5 then return end -- chat line already booked it
+    addItem(itemLink, tonumber(quantity) or 1, true)
 end)
 
 ns:Listen("LEDGER_ENTRY", function(e)
@@ -393,7 +435,7 @@ local function refresh(p)
             local fill
             if t.coin then fill = ns.Color("amber", "COIN") .. "  " .. ns.Money(t.v)
             elseif t.quest then fill = ns.Color("cyan", "QUEST") .. "  " .. ns.Money(t.v)
-            else fill = t.link .. (t.qty > 1 and ns.Color("grey", " x" .. t.qty) or "") end
+            else fill = (t.reward and (ns.Color("cyan", "REWARD") .. "  ") or "") .. t.link .. (t.qty > 1 and ns.Color("grey", " x" .. t.qty) or "") end
             tape[#tape + 1] = {
                 link = t.link,
                 cells = {
