@@ -119,6 +119,16 @@ end
 function P:SetLocation(loc, counts)
     local t = invOf()
     if not t then return end
+    -- Auctions that disappear from your listings without a recorded sale (expired or
+    -- cancelled) always come back by mail. Count them as in transit to the mailbox so
+    -- their cost basis survives until you collect them. The next mailbox scan replaces
+    -- the transit count with what's really there.
+    if loc == "a" then
+        for id, e in pairs(t) do
+            local before, after = e.a or 0, (counts[id] and counts[id].q) or 0
+            if after < before then e.m = (e.m or 0) + (before - after) end
+        end
+    end
     for id, e in pairs(t) do e[loc] = nil end
     for id, c in pairs(counts) do
         local e = t[id] or {}
@@ -201,6 +211,33 @@ function P:Sell(id, q, proceeds)
     ns.db.realized = (ns.db.realized or 0) + r
     b.qty = b.qty - cq
     return r
+end
+
+-- Purchases of an item recorded in the ledger (all characters), newest first
+function P:Purchases(id)
+    local out = {}
+    for i = #ns.db.ledger, 1, -1 do
+        local e = ns.db.ledger[i]
+        if (e.k == "AH_BUY" or e.k == "VENDOR_BUY") and e.q and e.q > 0 and e.a < 0 and e.i and P.ID(e.i) == id then
+            out[#out + 1] = { t = e.t, q = e.q, unit = -e.a / e.q, cost = -e.a, k = e.k, c = e.c }
+        end
+    end
+    return out
+end
+
+-- Rebuild a cost basis from the ledger: the most recent purchases that cover what you
+-- hold now (last bought = still held). Returns avg, qty, purchasesUsed or nil.
+function P:BasisFromLedger(id)
+    local held = self:Held(id)
+    if held <= 0 then return nil end
+    local q, cost, used = 0, 0, 0
+    for _, b in ipairs(self:Purchases(id)) do
+        local take = math.min(b.q, held - q)
+        q, cost, used = q + take, cost + take * b.unit, used + 1
+        if q >= held then break end
+    end
+    if q <= 0 then return nil end
+    return cost / q, q, used
 end
 
 function P:SetBasis(id, avg, qty)
@@ -394,7 +431,7 @@ end
 local function BuildEditor(p)
     local ed = UI.Panel(p, C.panel2)
     UI.SetBorderColor(ed, C.orange)
-    ed:SetSize(420, 214)
+    ed:SetSize(450, 214)
     ed:SetPoint("CENTER", 0, 10)
     ed:SetFrameLevel(p:GetFrameLevel() + 30)
     ed:EnableMouse(true)
@@ -405,20 +442,23 @@ local function BuildEditor(p)
     local ht = UI.Text(head, 11, { 0, 0, 0 }, "LEFT", UI.FONT, "")
     ht:SetPoint("LEFT", 8, 0); ht:SetText("COST BASIS  ·  SET YOUR BUY PRICE")
 
-    ed.item = UI.Text(ed, 13, C.white); ed.item:SetPoint("TOPLEFT", 12, -30); ed.item:SetWidth(396)
-    ed.info = UI.Text(ed, 10, C.grey); ed.info:SetPoint("TOPLEFT", 12, -50); ed.info:SetWidth(396)
-    ed.cur = UI.Text(ed, 10, C.grey); ed.cur:SetPoint("TOPLEFT", 12, -64); ed.cur:SetWidth(396)
+    ed.item = UI.Text(ed, 13, C.white); ed.item:SetPoint("TOPLEFT", 12, -30); ed.item:SetWidth(426)
+    ed.info = UI.Text(ed, 10, C.grey); ed.info:SetPoint("TOPLEFT", 12, -50); ed.info:SetWidth(426)
+    ed.cur = UI.Text(ed, 10, C.grey); ed.cur:SetPoint("TOPLEFT", 12, -64); ed.cur:SetWidth(426)
 
     local l1 = UI.Text(ed, 11, C.white); l1:SetPoint("TOPLEFT", 12, -92); l1:SetText("Avg buy price per unit")
     ed.price = Input(ed, 150); ed.price:SetPoint("TOPRIGHT", -12, -88)
     local h1 = UI.Text(ed, 9, C.dim); h1:SetPoint("TOPRIGHT", ed.price, "BOTTOMRIGHT", 0, -2); h1:SetText("e.g.  2g 50s   ·   2.5   ·   75s")
     local l2 = UI.Text(ed, 11, C.white); l2:SetPoint("TOPLEFT", 12, -130); l2:SetText("Units at this price")
     ed.qty = Input(ed, 150, true); ed.qty:SetPoint("TOPRIGHT", -12, -126)
-    ed.preview = UI.Text(ed, 11, C.white); ed.preview:SetPoint("TOPLEFT", 12, -158); ed.preview:SetWidth(396)
+    ed.preview = UI.Text(ed, 11, C.white); ed.preview:SetPoint("TOPLEFT", 12, -158); ed.preview:SetWidth(426)
 
     local set = UI.Button(ed, "SET BASIS", 110, 22, "primary"); set:SetPoint("BOTTOMRIGHT", -12, 10)
     local cancel = UI.Button(ed, "CANCEL", 80, 22, "default"); cancel:SetPoint("RIGHT", set, "LEFT", -6, 0)
     local clear = UI.Button(ed, "CLEAR BASIS", 100, 22, "danger"); clear:SetPoint("BOTTOMLEFT", 12, 10)
+    local fromLedger = UI.Button(ed, "FROM LEDGER", 100, 22, "default"); fromLedger:SetPoint("LEFT", clear, "RIGHT", 6, 0)
+    fromLedger.tip = "Fill in your average buy price from the AH and vendor purchases recorded in the ledger"
+    ed.fromLedger = fromLedger
 
     local function preview()
         local avg = ns.ParseMoney(ed.price.eb:GetText())
@@ -447,6 +487,14 @@ local function BuildEditor(p)
     set:SetScript("OnClick", apply)
     cancel:SetScript("OnClick", function() ed:Hide() end)
     clear:SetScript("OnClick", function() P:ClearBasis(ed.id); ed:Hide() end)
+    fromLedger:SetScript("OnClick", function()
+        local avg, q, used = P:BasisFromLedger(ed.id)
+        if not avg then ns.Print("No purchases of this item in the ledger.") return end
+        ed.price.eb:SetText(ns.MoneyPlain(avg))
+        ed.qty.eb:SetText(tostring(q))
+        ns.Print(format("From the ledger: %d units at an average of %s (%d purchase%s). Press SET BASIS to book it.",
+            q, ns.MoneyShort(avg), used, used == 1 and "" or "s"))
+    end)
 
     function ed:Open(id)
         self.id = id
@@ -650,6 +698,18 @@ local function buildRows(p, scopeKey, loc, indent)
                         end
                     end
                     tt:AddLine(" ")
+                    local buys = P:Purchases(id)
+                    if #buys > 0 then
+                        tt:AddLine(" ")
+                        tt:AddLine("Purchase history (ledger)", 0.98, 0.55, 0.12)
+                        for i = 1, math.min(4, #buys) do
+                            local b = buys[i]
+                            tt:AddDoubleLine(date("%m-%d", b.t) .. "  " .. (b.k == "AH_BUY" and "AH" or "Vendor") .. "  " .. b.q .. "x",
+                                ns.MoneyShort(b.unit) .. " each", 0.8, 0.8, 0.8, 1, 1, 1)
+                        end
+                        if #buys > 4 then tt:AddLine("+" .. (#buys - 4) .. " older", 0.5, 0.5, 0.55) end
+                    end
+                    tt:AddLine(" ")
                     tt:AddLine("Cost basis", 0.98, 0.55, 0.12)
                     if b then
                         tt:AddDoubleLine("Avg cost", ns.Money(b.avg), 0.8, 0.8, 0.8, 1, 1, 1)
@@ -661,6 +721,7 @@ local function buildRows(p, scopeKey, loc, indent)
                         end
                     else
                         tt:AddLine("Uncosted (looted, crafted, or bought before install)", 0.6, 0.6, 0.65)
+                        if #buys > 0 then tt:AddLine("Click, then FROM LEDGER to restore it from your purchases", 1, 0.76, 0.22) end
                     end
                     tt:AddLine(" ")
                     if view.hidden then

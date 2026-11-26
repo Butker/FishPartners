@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.9.2]
+- Fix: items you post on the AH that expire or get cancelled keep their cost basis. They're counted as on their way to your mailbox until you collect them, instead of looking like they'd been used up.
+- Portfolio tooltips show the item's purchase history from the ledger (date, AH or vendor, quantity, price).
+- New **FROM LEDGER** button in the buy-price editor: rebuilds the average buy price from your recorded purchases. Use it to repair items that lost their cost basis before this fix.
+
 ## [1.9.1]
 - Session: quest reward items (including the reward you pick) are now valued and counted, marked REWARD in the loot feed and the mini window. Only items received right at a quest turn-in count, so vendor purchases and crafted items are never mistaken for rewards.
 
