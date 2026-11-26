@@ -60,7 +60,7 @@ local function build()
     local close = smallButton(head, "x", 16, "default")
     close:SetHeight(14)
     close:SetPoint("RIGHT", -2, 0)
-    close.tip = "Hide the mini window (the session keeps running).\nBring it back with /fpwm hud."
+    close.tip = "Hide the mini window (the session keeps running).\nBring it back with /fp hud."
     close:SetScript("OnClick", function() H:Hide(true) end)
     f.state:SetPoint("RIGHT", close, "LEFT", -6, 0)
     f.dot:SetPoint("RIGHT", f.state, "LEFT", -4, 0)

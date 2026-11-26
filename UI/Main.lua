@@ -251,7 +251,7 @@ local function reportError(def, err)
         ns.errors[err] = true
         table.insert(ns.errors, def.code .. ": " .. err)
         ns.Print(ns.Color("red", "The " .. def.code .. " page hit an error.") .. " Type " ..
-            ns.Color("amber", "/fpwm diag") .. " and send me the output.")
+            ns.Color("amber", "/fp diag") .. " and send me the output.")
     end
     if def.frame then
         if not def.frame.errText then
@@ -443,9 +443,7 @@ end
 
 ns:OnInit(function()
     BuildMinimap()
-    SLASH_FISHPARTNERS1 = "/fpwm"
-    SLASH_FISHPARTNERS2 = "/fish"
-    SLASH_FISHPARTNERS3 = "/fishpartners"
+    SLASH_FISHPARTNERS1 = "/fp"
     SlashCmdList.FISHPARTNERS = function(msg)
         msg = (msg or ""):upper():gsub("%s+", "")
         if msg == "" then ns:Toggle() return end

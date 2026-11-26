@@ -53,7 +53,7 @@ function U:Notify()
     ns.Print(ns.Color("amber", "UPDATE AVAILABLE") .. "  Fish & Partners " .. ns.Color("green", v) ..
         " is out (you have " .. ns.VERSION .. ").")
     ns.Print("Close the game and run " .. ns.Color("amber", "Update-FishPartners") ..
-        ", or type " .. ns.Color("amber", "/fpwm update") .. " for the download link.")
+        ", or type " .. ns.Color("amber", "/fp update") .. " for the download link.")
 end
 
 local replied = {}
@@ -89,5 +89,5 @@ end)
 ns:On("GROUP_ROSTER_UPDATE", function() if ns.db then C_Timer.After(5, announceGroup) end end)
 
 ns:AddTicker(function()
-    if U.newer then return ns.Color("amber", "UPDATE AVAILABLE: v" .. U.newer .. "  (/fpwm update)") end
+    if U.newer then return ns.Color("amber", "UPDATE AVAILABLE: v" .. U.newer .. "  (/fp update)") end
 end)

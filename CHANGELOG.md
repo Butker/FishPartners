@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.9.4]
+- The slash command is now just **/fp** (for example `/fp`, `/fp start`, `/fp hud`, `/fp update`). The old /fpwm, /fish and /fishpartners commands are gone.
+
 ## [1.9.3]
 - Quest items are no longer tracked anywhere (session loot, party view, Portfolio, net worth). They can't be sold and have no value. Quest items saved by older versions are cleaned up automatically.
 

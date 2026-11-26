@@ -10,7 +10,7 @@ A Bloomberg-terminal-style gold analytics addon for World of Warcraft: Forever.
 
 If Windows SmartScreen warns about the file, click **More info → Run anyway** (it's a plain script; you can open it in Notepad to read it).
 
-**In game:** when someone in your guild or group has a newer version, you get an *UPDATE AVAILABLE* notice. `/fpwm update` shows the download link.
+**In game:** when someone in your guild or group has a newer version, you get an *UPDATE AVAILABLE* notice. `/fp update` shows the download link.
 
 ## Install manually
 1. Unzip so you get the folder `FishPartners` (containing `FishPartners.toc`).
@@ -21,7 +21,7 @@ If Windows SmartScreen warns about the file, click **More info → Run anyway** 
 Auctionator is optional but recommended. Without it everything is valued at vendor price.
 
 ## Open it
-- `/fpwm` (or `/fish`), or left-click the fish on the minimap.
+- `/fp` (or `/fish`), or left-click the fish on the minimap.
 - Right-click the minimap fish to start or pause a session.
 - Type functions in the `FPWM>` command line at the bottom: `PNL`, `AUM`, `GL`, `CMPL`, `START`, `PAUSE`, `STOP`, `MTM`, `HELP`.
 
@@ -48,20 +48,20 @@ Auctionator is optional but recommended. Without it everything is valued at vend
 - **Items** are tracked from the game's loot messages and valued with your pricing rules.
 - **Coin (estimated):** the game doesn't show other players' coin, but group coin is split evenly, so each member's share is your share while they were in the group.
 - **FP tag:** the member also runs Fish & Partners. Your addons quietly share session totals, quests included, so you can hover them for their exact numbers.
-- If a member's loot doesn't show up, type `/fpwm partydebug`. Every party loot line is then echoed with what the addon did with it (booked, not a loot line, looter not in group). Send me that output.
+- If a member's loot doesn't show up, type `/fp partydebug`. Every party loot line is then echoed with what the addon did with it (booked, not a loot line, looter not in group). Send me that output.
 - Members who leave stay on the board marked "left", and their coin share stops growing. Booked sessions keep a party summary.
 
 ## Mini session window
 - When you start a session, a small window opens. It shows how long the market has been open, gold per hour, session P&L, coin vs items, and your last 4 fills.
 - Its buttons are **PAUSE/RESUME**, **TERMINAL** (opens the full PNL page) and **BOOK** (stop and archive). **x** hides it while the session keeps running.
-- Drag it anywhere. Drag the bottom-right corner to scale the whole window, text included, from 60% to 250%. Right-click the corner to reset it to 100%. Position and scale are remembered. Type `/fpwm hud` to show or hide it. Its scale and auto-open setting are on the Compliance tab.
+- Drag it anywhere. Drag the bottom-right corner to scale the whole window, text included, from 60% to 250%. Right-click the corner to reset it to 100%. Position and scale are remembered. Type `/fp hud` to show or hide it. Its scale and auto-open setting are on the Compliance tab.
 
 ## Opening bell
 - When you enter a dungeon or raid, a pop-up asks:
   - **No session running:** *OPENING BELL — New market: Deadmines.* Choose **OPEN SESSION** or **STAY FLAT**.
   - **Session running:** *PORTFOLIO REBALANCE — New venture.* It shows your session's time, P&L and gold per hour. Choose **BOOK & OPEN NEW** or **HOLD POSITION**. If the session is paused you also get **RESUME CURRENT**.
 - Re-entering the same instance within 15 minutes doesn't ask again (corpse runs, porting out). An instance reset always counts as a new run. `/reload` never triggers it.
-- Turn it off on the Compliance tab. `/fpwm bell` shows it on demand.
+- Turn it off on the Compliance tab. `/fp bell` shows it on demand.
 
 ## Cost basis (Portfolio)
 - **Manual:** click any position and enter your buy price (`2g 50s`, `2.5` or `75s`) and how many units it covers. Example: 20 mats worth 1g each, marked at 2g = **-20g unrealized**.
@@ -91,7 +91,7 @@ Auctionator is optional but recommended. Without it everything is valued at vend
 - **Ledger:** right-click an entry to delete it, which is useful for cleaning up entries recorded before v1.4.
 
 ## Troubleshooting
-- Type `/fpwm diag` and send the output. It shows which AH API your client has, which AH events the addon has seen, whether it can read your sell slot, and any recent errors.
+- Type `/fp diag` and send the output. It shows which AH API your client has, which AH events the addon has seen, whether it can read your sell slot, and any recent errors.
 - If a page hits an error, it now shows the error text at the bottom instead of going blank.
 
 ## Notes

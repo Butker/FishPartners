@@ -147,7 +147,7 @@ ns:On("PLAYER_LOGIN", function()
         local ok, err = pcall(inits[i])
         if not ok then geterrorhandler()(err) end
     end
-    ns.Print("Desk open. |cfffb8b1e/fpwm|r to launch the terminal.")
+    ns.Print("Desk open. |cfffb8b1e/fp|r to launch the terminal.")
 end)
 
 ---------------------------------------------------------------------------
