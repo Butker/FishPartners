@@ -22,6 +22,7 @@ local function scanBags(first, last, includeBank)
     local function scan(bag)
         for slot = 1, ns.GetNumSlots(bag) do
             local link, count, isBound, itemID = ns.GetSlotInfo(bag, slot)
+            if link and ns.IsQuestItem(itemID or link) then link = nil end
             if link then
                 count = count or 1
                 local id = itemID or tonumber(link:match("item:(%d+)"))

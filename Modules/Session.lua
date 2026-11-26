@@ -139,6 +139,7 @@ local function pushTape(s, entry)
 end
 
 local function addItem(link, qty, reward)
+    if ns.IsQuestItem(link) then return end
     local s = sess()
     ns.WhenItemReady(link, function()
         if sess() ~= s or not (s and s.active) then return end

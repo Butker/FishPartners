@@ -22,6 +22,26 @@ ns:OnInit(function()
     ns.db.links = ns.db.links or {}
     ns.db.realized = ns.db.realized or 0
     ns.db.hidden = ns.db.hidden or {}
+    -- one-time cleanup: drop quest items that older versions recorded
+    C_Timer.After(5, function()
+        for _, ch in pairs(ns.db.chars) do
+            for id in pairs(ch.inv or {}) do
+                if ns.IsQuestItem(id) then ch.inv[id] = nil end
+            end
+        end
+        local sess = ns.cdb and ns.cdb.session
+        if sess and sess.items then
+            for link in pairs(sess.items) do
+                if ns.IsQuestItem(link) then sess.items[link] = nil end
+            end
+            for _, m in pairs(sess.party or {}) do
+                for link in pairs(m.items or {}) do
+                    if ns.IsQuestItem(link) then m.items[link] = nil end
+                end
+            end
+        end
+        P:Changed()
+    end)
 end)
 
 ---------------------------------------------------------------------------
@@ -635,6 +655,7 @@ local function buildRows(p, scopeKey, loc, indent)
     local rows = {}
     local tMV, tCost, tCostedMV, tUPL = 0, 0, 0, 0
     for id, a in pairs(agg) do
+      if not ns.IsQuestItem(id) then
         local link = P.Link(id)
         local name = link and ns.LinkName(link) or ("item " .. id)
         if (P:IsHidden(id) == view.hidden) and (view.search == "" or name:lower():find(view.search, 1, true)) then
@@ -746,6 +767,7 @@ local function buildRows(p, scopeKey, loc, indent)
                 end,
             }
         end
+      end
     end
 
     sortRows(rows)

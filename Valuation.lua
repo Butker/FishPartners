@@ -28,6 +28,17 @@ function ns.GetAHPrice(link, itemID)
     return nil
 end
 
+-- Quest items (the "Quest" item class, or bound-to-quest) can't be sold and are
+-- worth nothing, so the desk never tracks them. Works on uncached items too.
+local CLASS_QUEST = (Enum and Enum.ItemClass and Enum.ItemClass.Questitem) or 12
+function ns.IsQuestItem(item)
+    if not item then return false end
+    local classID = select(6, ns.GetItemInfoInstant(item))
+    if classID == CLASS_QUEST then return true end
+    local bindType = select(14, ns.GetItemInfo(item))
+    return bindType == 4
+end
+
 function ns.IsGear(link)
     local classID = select(6, ns.GetItemInfoInstant(link))
     return classID == CLASS_WEAPON or classID == CLASS_ARMOR

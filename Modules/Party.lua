@@ -172,6 +172,7 @@ ns:On("CHAT_MSG_LOOT", function(msg, nameArg, _, _, nameArg2, _, _, _, _, _, _, 
     if not name then dbg(msg, "looter not in your group") return end
     local link, qty = findItem(msg)
     if not link then dbg(msg, "no item link") return end
+    if ns.IsQuestItem(link) then dbg(msg, "quest item (no value), skipped") return end
     dbg(msg, ns.Color("green", "booked ") .. name .. " x" .. qty)
 
     local s = sess()

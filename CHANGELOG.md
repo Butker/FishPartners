@@ -1,5 +1,8 @@
 # Changelog
 
+## [1.9.3]
+- Quest items are no longer tracked anywhere (session loot, party view, Portfolio, net worth). They can't be sold and have no value. Quest items saved by older versions are cleaned up automatically.
+
 ## [1.9.2]
 - Fix: items you post on the AH that expire or get cancelled keep their cost basis. They're counted as on their way to your mailbox until you collect them, instead of looking like they'd been used up.
 - Portfolio tooltips show the item's purchase history from the ledger (date, AH or vendor, quantity, price).
