@@ -1,0 +1,93 @@
+# Posts "Fish & Partners X.Y.Z is live" with the changelog to Discord whenever a
+# push to main changes the version in FishPartners.toc.
+#
+# Setup (once): add a repository secret named DISCORD_WEBHOOK containing your
+# Discord channel's webhook URL (Settings -> Secrets and variables -> Actions).
+# Test: Actions tab -> "Discord announcement" -> Run workflow (posts the current version).
+name: Discord announcement
+
+on:
+  push:
+    branches: [main]
+    paths: [FishPartners.toc]
+  workflow_dispatch:
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect version change
+        id: ver
+        run: |
+          NEW=$(grep -m1 '^## Version:' FishPartners.toc | sed 's/^## Version:[[:space:]]*//' | tr -d '\r')
+          OLD=$(git show HEAD~1:FishPartners.toc 2>/dev/null | grep -m1 '^## Version:' | sed 's/^## Version:[[:space:]]*//' | tr -d '\r' || true)
+          echo "new=$NEW" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$NEW" != "$OLD" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Version: $OLD -> $NEW"
+
+      - name: Post to Discord
+        if: steps.ver.outputs.changed == 'true'
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          VERSION: ${{ steps.ver.outputs.new }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::DISCORD_WEBHOOK secret is not set, skipping the announcement."
+            exit 0
+          fi
+          python3 - <<'PY'
+          import json, os, re, urllib.request
+
+          version = os.environ["VERSION"]
+          repo = os.environ["REPO"]
+
+          # This version's section from CHANGELOG.md
+          notes, on = [], False
+          for line in open("CHANGELOG.md", encoding="utf-8"):
+              line = line.rstrip("\n")
+              if line.startswith("## "):
+                  if on:
+                      break
+                  on = version in line
+                  continue
+              if on and line.strip():
+                  notes.append(line)
+          text = "\n".join(notes).strip() or "Fresh update on the desk."
+          # Discord markdown: keep bullets, turn **bold** as is, trim to embed limit
+          if len(text) > 3800:
+              text = text[:3800].rsplit("\n", 1)[0] + "\n…"
+
+          updater = f"https://github.com/{repo}/raw/main/tools/Update-FishPartners.bat"
+          payload = {
+              "username": "Fish & Partners Desk",
+              "embeds": [{
+                  "title": f"📈 Fish & Partners {version} is live",
+                  "url": f"https://github.com/{repo}",
+                  "description": text,
+                  "color": 0xFB8B1E,
+                  "fields": [{
+                      "name": "How to update",
+                      "value": f"Run **Update-FishPartners** (or just log in to Windows if auto-update is on).\n"
+                               f"New here? [Download the updater]({updater})",
+                  }],
+                  "footer": {"text": "Fish & Partners Wealth Management · past loot is not indicative of future loot"},
+              }],
+          }
+          req = urllib.request.Request(
+              os.environ["WEBHOOK"],
+              data=json.dumps(payload).encode("utf-8"),
+              headers={"Content-Type": "application/json", "User-Agent": "FishPartners-Announcer"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req) as r:
+              print("Discord responded", r.status)
+          PY
