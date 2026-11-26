@@ -51,6 +51,7 @@ Auctionator is optional but recommended. Without it everything is valued at vend
 - **Coin (estimated):** the game doesn't show other players' coin, but group coin is split evenly, so each member's share is your share while they were in the group.
 - **FP tag:** the member also runs Fish & Partners. Your addons quietly share session totals, quests included, so you can hover them for their exact numbers.
 - If a member's loot doesn't show up, type `/fp partydebug`. Every party loot line is then echoed with what the addon did with it (booked, not a loot line, looter not in group). Send me that output.
+- **House rules:** when other members also run Fish & Partners (2.1+), every desk in the group uses the same rules (gear +10%, other +5%, no AH cut, quest gold counts) and the newest AH scan in the group for every drop, so your party numbers agree. A small bell announces it. `/fp rules` shows the status; turn it off on the Compliance tab.
 - Members who leave stay on the board marked "left", and their coin share stops growing. Booked sessions keep a party summary.
 
 ## Mini session window

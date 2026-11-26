@@ -203,57 +203,70 @@ end)
 --   source = "AH" | "VND" | "BOX" (container) | "---"
 --   info   = { capped = bool, stale = bool, age = days, cap = copper }
 ---------------------------------------------------------------------------
-function ns.Valuate(link, isBound)
+-- Your own market price for an item: Auctionator's price, thin-market capped.
+-- Returns ahPrice (or nil), info { age, stale, capped, cap }
+function ns.MarketPrice(link, vendor)
+    local info = {}
+    local key = ns.ItemKey(link)
+    local ah = ns.GetAHPrice(link, ns.KeyItemID(key))
+    if not ah then return nil, info end
+    local age = ns.GetAHAge(link)
+    info.age = age
+    info.stale = age ~= nil and age > ((ns.S and ns.S.priceStaleDays) or 7)
+    -- remember fresh prices (today's scan) for the thin-market cap
+    if age == nil or age <= 1 then recordPrice(key, ah) end
+    local med = ns.RecentMedian(key, 14)
+    local cap
+    if med then cap = med * 3
+    elseif (vendor or 0) > 0 then cap = vendor * 50 end
+    if cap and ah > cap then
+        info.capped, info.cap = true, cap
+        ah = cap
+    end
+    return ah, info
+end
+
+-- opts (optional, used by group loot rules):
+--   rules = { gearMargin, otherMargin, deductAHCut, ahCut }  instead of your settings
+--   price = function(link, vendor) -> ah, info               instead of your own scan
+function ns.Valuate(link, isBound, opts)
     if not link then return 0, "---" end
     local name, _, _, _, _, _, _, _, _, _, vendor, classID, _, bindType = ns.GetItemInfo(link)
     if not name then return nil end -- not cached yet
     vendor = vendor or 0
     local isGear = classID == CLASS_WEAPON or classID == CLASS_ARMOR
-    local S = ns.S
-    local info = {}
+    local R = (opts and opts.rules) or ns.S
 
-    if ns.IsQuestItem(link) then return 0, "---", nil, 0, isGear, info end
+    if ns.IsQuestItem(link) then return 0, "---", nil, 0, isGear, {} end
     if type(link) == "string" and link:find("|H") and ns.IsOpenable(link) then
-        return 0, "BOX", nil, vendor, isGear, info
+        return 0, "BOX", nil, vendor, isGear, {}
     end
     if isBound or bindType == 1 then
-        return vendor, vendor > 0 and "VND" or "---", nil, vendor, isGear, info
+        return vendor, vendor > 0 and "VND" or "---", nil, vendor, isGear, {}
     end
 
-    local key = ns.ItemKey(link)
-    local itemID = ns.KeyItemID(key)
-    local ah = ns.GetAHPrice(link, itemID)
-    if ah then
-        local age = ns.GetAHAge(link)
-        info.age = age
-        info.stale = age ~= nil and age > (S.priceStaleDays or 7)
-        -- remember fresh prices (today's scan) for the thin-market cap
-        if age == nil or age <= 1 then recordPrice(key, ah) end
-        -- thin-market cap
-        local med = ns.RecentMedian(key, 14)
-        local cap
-        if med then cap = med * 3
-        elseif vendor > 0 then cap = vendor * 50 end
-        if cap and ah > cap then
-            info.capped, info.cap = true, cap
-            ah = cap
-        end
-    end
+    local ah, info
+    if opts and opts.price then ah, info = opts.price(link, vendor) else ah, info = ns.MarketPrice(link, vendor) end
+    info = info or {}
 
     local ahNet = ah
-    if ah and S.deductAHCut then ahNet = floor(ah * (1 - (S.ahCut or 5) / 100)) end
-    local margin = (isGear and S.gearMargin or S.otherMargin) or 0
+    if ah and R.deductAHCut then ahNet = floor(ah * (1 - (R.ahCut or 5) / 100)) end
+    local margin = (isGear and R.gearMargin or R.otherMargin) or 0
     if ahNet and ahNet > 0 and ahNet >= vendor * (1 + margin / 100) then
         return ahNet, "AH", ah, vendor, isGear, info
     end
     return vendor, vendor > 0 and "VND" or "---", ah, vendor, isGear, info
 end
 
+-- Session valuation (replaced by the group-rules module when house rules apply)
+function ns.SessionValuate(link, isBound) return ns.Valuate(link, isBound) end
+
 -- One line describing a valuation's caveats, for tooltips (or nil)
 function ns.ValuationNote(info)
     if not info then return nil end
     local parts = {}
     if info.capped then parts[#parts + 1] = "capped at " .. ns.MoneyShort(info.cap) .. " (thin market)" end
+    if info.from then parts[#parts + 1] = "price from " .. info.from .. "'s scan" .. (info.age and (info.age == 0 and " (today)" or (" (" .. info.age .. "d old)")) or "") end
     if info.stale then parts[#parts + 1] = "AH price " .. (info.age or "?") .. " days old" end
     if #parts == 0 then return nil end
     return table.concat(parts, " · ")

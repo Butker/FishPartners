@@ -87,6 +87,8 @@ local function build(p)
         function() return S().hudAuto end, function(v) S().hudAuto = v end, colW), 24)
     p.controls[#p.controls + 1] = addR(UI.Toggle(r, "Pause the session while you're AFK",
         function() return S().afkPause ~= false end, function(v) S().afkPause = v end, colW), 24)
+    p.controls[#p.controls + 1] = addR(UI.Toggle(r, "Group loot rules with other Fish & Partners users",
+        function() return S().groupRules ~= false end, function(v) S().groupRules = v end, colW), 24)
     p.controls[#p.controls + 1] = addR(UI.Toggle(r, "Opening bell when entering a dungeon or raid",
         function() return S().instanceBell end, function(v) S().instanceBell = v end, colW), 24)
     p.controls[#p.controls + 1] = addR(UI.Stepper(r, "Mini window scale",
@@ -116,7 +118,7 @@ local function build(p)
         for k in pairs(ns.db.chars) do if k ~= mine then ns.db.chars[k] = nil end end
         ns.Wealth:Snapshot()
     end, (colW + 8) / 2)
-    y = y - 40
+    y = y - 30
 
     local disclaimer = UI.Text(r, 9, C.dim, "LEFT")
     disclaimer:SetWordWrap(true)

@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.1.0] — House rules for groups
+When you're in a group with friends who also run Fish & Partners, your party numbers now agree.
+
+- **Same prices:** when an item drops, each desk shares its Auctionator price for it if its scan is newer than what the group already has. Everyone then values that item with the newest scan in the group. Two scans from the same day: the lower price wins. Tooltips say whose scan a price came from.
+- **Same rules:** sessions switch to the house rules for the rest of the session: gear must beat vendor by 10%, everything else by 5%, no AH cut deducted, quest gold counts. Your own settings still apply to your Portfolio and Net Worth.
+- **Bell:** a small *GROUP LOOT RULES IN EFFECT* notice rings when house rules start, and again when you enter a dungeon or raid with them on. The ticker shows *HOUSE RULES* while they apply.
+- Loot that dropped before house rules started is re-marked, so the whole session uses the same rules.
+- Type `/fp rules` to see who in your group runs the addon and how many prices have been shared. Turn it off on the Compliance tab.
+- Your friends need 2.1 too. Members on older versions are valued with your own prices.
+- Fix: party loot is now matched to the right member even when the game leaves out the looter's name.
+
 ## [2.0.0] — Bulletproof books
 Your numbers should now be right in the tricky cases, and the addon checks its own math.
 

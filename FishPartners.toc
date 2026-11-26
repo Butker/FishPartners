@@ -2,7 +2,7 @@
 ## Title: |cfffb8b1eFish & Partners|r Wealth Management
 ## Notes: Bloomberg-grade gold analytics. Intraday P&L, Net Worth, Portfolio, Reports, General Ledger.
 ## Author: Fish & Partners
-## Version: 2.0.0
+## Version: 2.1.0
 ## OptionalDeps: Auctionator
 ## SavedVariables: FishPartnersDB
 ## SavedVariablesPerCharacter: FishPartnersCharDB
@@ -15,6 +15,7 @@ UI\Main.lua
 Modules\Ledger.lua
 Modules\Session.lua
 Modules\Party.lua
+Modules\GroupRules.lua
 Modules\SessionHUD.lua
 Modules\InstanceBell.lua
 Modules\UpdateNotice.lua

@@ -143,8 +143,8 @@ local function resolveLooter(roster, guid, nameArg, textName)
     if guid and guid ~= "" then
         for key, info in pairs(roster) do if info.guid == guid then return key end end
     end
-    for _, cand in ipairs({ nameArg, textName }) do
-        cand = plainName(cand)
+    for i = 1, 2 do
+        local cand = plainName(i == 1 and nameArg or textName)
         if cand and cand ~= "" then
             if roster[cand] then return cand end
             local base = cand:match("^([^%-]+)")
@@ -180,7 +180,7 @@ ns:On("CHAT_MSG_LOOT", function(msg, nameArg, _, _, nameArg2, _, _, _, _, _, _, 
         if sess() ~= s or not s.active then return end
         local m = member(s, name)
         m.class = roster[name] and roster[name].class or m.class
-        local unit, src = ns.Valuate(link)
+        local unit, src = ns.SessionValuate(link)
         unit = unit or 0
         local it = m.items[link]
         if not it then it = { qty = 0 }; m.items[link] = it end
@@ -461,7 +461,8 @@ function PT:RefreshView(pv)
     pv.notes:SetText(
         ns.Color("white", "Group: ") .. members .. " other member" .. (members == 1 and "" or "s") ..
         "   ·   " .. ns.Color("white", "FP desks: ") .. synced .. "\n\n" ..
-        "Items: tracked from loot messages, valued with your pricing rules.\n\n" ..
+        ((s and s.groupRules) and (ns.Color("orange", "House rules in effect: ") .. "everyone's desk values items with the same rules and the newest AH scan in the group.\n\n")
+            or "Items: tracked from loot messages, valued with your pricing rules.\n\n") ..
         "Coin*: the game doesn't show other players' coin. Group coin is split evenly, so each member's share is estimated from yours while they were in the group.\n\n" ..
         ns.Color("green", "FP") .. " = member runs Fish & Partners. Hover them for their exact session P&L, quests included.")
 end

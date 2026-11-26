@@ -89,7 +89,9 @@ function S:Stats()
     itemsValue = itemsValue + (s.convert or 0) -- inputs used up by disenchanting etc. (negative)
     st.elapsed = self:Elapsed()
     st.coin = s.coin or 0
-    st.quest = (ns.S.sessionQuest ~= false) and (s.quest or 0) or 0
+    local questOn = ns.S.sessionQuest ~= false
+    if s.groupRules then questOn = true end -- house rules: quest gold always counts
+    st.quest = questOn and (s.quest or 0) or 0
     st.items = itemsValue
     st.distinct = n
     st.lootCount = s.lootCount or 0
@@ -129,7 +131,7 @@ function S:Remark()
     local s = sess()
     if not s then return end
     for link, it in pairs(s.items) do
-        local unit, src, ah, vendor, _, info = ns.Valuate(link)
+        local unit, src, ah, vendor, _, info = ns.SessionValuate(link)
         if unit then it.unit, it.src, it.ah, it.vendor, it.note = unit, src, ah, vendor, ns.ValuationNote(info) end
     end
     ns:Fire("SESSION_UPDATE")
@@ -148,7 +150,7 @@ local function addItem(link, qty, reward)
     local s = sess()
     ns.WhenItemReady(link, function()
         if sess() ~= s or not (s and s.active) then return end
-        local unit, src, ah, vendor, _, info = ns.Valuate(link)
+        local unit, src, ah, vendor, _, info = ns.SessionValuate(link)
         unit = unit or 0
         local it = s.items[link]
         if not it then it = { qty = 0 }; s.items[link] = it end
@@ -325,7 +327,7 @@ local function bookSwap(link, n, sourceKey)
     if not (s and s.active and not s.paused) then return end
     ns.WhenItemReady(link, function()
         if sess() ~= s then return end
-        local unit = ns.Valuate(link) or 0
+        local unit = ns.SessionValuate(link) or 0
         local it = s.items[link]
         if it and it.qty >= n then
             -- the input was looted this session: just take it out of the holdings

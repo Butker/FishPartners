@@ -67,6 +67,7 @@ local DEFAULTS = {
         hudScale       = 1.0,
         instanceBell   = true,
         afkPause       = true,  -- pause the session while WoW marks you AFK
+        groupRules     = true,  -- house rules + shared prices when grouped with other users
         priceStaleDays = 7,     -- AH prices older than this are marked stale  -- ask to open/book a session when entering a dungeon or raid  -- open the mini session window when a session starts
         minimapHide    = false,
         minimapAngle   = 200,
