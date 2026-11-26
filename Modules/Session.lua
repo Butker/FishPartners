@@ -9,6 +9,10 @@ ns.Session = S
 
 local function sess() return ns.cdb and ns.cdb.session end
 
+ns:Migration(1, "quest gold counts in sessions", function()
+    if not ns.db.migQuestGold then ns.S.sessionQuest = true end
+end)
+
 ---------------------------------------------------------------------------
 -- Loot message parsing (localized via Blizzard global strings)
 ---------------------------------------------------------------------------
@@ -82,6 +86,7 @@ function S:Stats()
         itemsValue = itemsValue + (it.unit or 0) * it.qty
         n = n + 1
     end
+    itemsValue = itemsValue + (s.convert or 0) -- inputs used up by disenchanting etc. (negative)
     st.elapsed = self:Elapsed()
     st.coin = s.coin or 0
     st.quest = (ns.S.sessionQuest ~= false) and (s.quest or 0) or 0
@@ -124,8 +129,8 @@ function S:Remark()
     local s = sess()
     if not s then return end
     for link, it in pairs(s.items) do
-        local unit, src, ah, vendor = ns.Valuate(link)
-        if unit then it.unit, it.src, it.ah, it.vendor = unit, src, ah, vendor end
+        local unit, src, ah, vendor, _, info = ns.Valuate(link)
+        if unit then it.unit, it.src, it.ah, it.vendor, it.note = unit, src, ah, vendor, ns.ValuationNote(info) end
     end
     ns:Fire("SESSION_UPDATE")
 end
@@ -139,16 +144,17 @@ local function pushTape(s, entry)
 end
 
 local function addItem(link, qty, reward)
-    if ns.IsQuestItem(link) then return end
+    if ns.Eligibility(link) == "skip" then return end
     local s = sess()
     ns.WhenItemReady(link, function()
         if sess() ~= s or not (s and s.active) then return end
-        local unit, src, ah, vendor = ns.Valuate(link)
+        local unit, src, ah, vendor, _, info = ns.Valuate(link)
         unit = unit or 0
         local it = s.items[link]
         if not it then it = { qty = 0 }; s.items[link] = it end
         it.qty = it.qty + qty
         it.unit, it.src, it.ah, it.vendor = unit, src or "---", ah, vendor
+        it.note = ns.ValuationNote(info)
         if reward then it.reward = true end
         s.lootCount = (s.lootCount or 0) + qty
         pushTape(s, { t = time(), link = link, qty = qty, v = unit * qty, src = src, reward = reward or nil })
@@ -229,8 +235,13 @@ ns:On("PLAYER_LOGOUT", function()
 end)
 
 ns:OnInit(function()
-    if not ns.db.migQuestGold then ns.S.sessionQuest = true; ns.db.migQuestGold = true end
     local s = sess()
+    -- crash or disconnect (no logout event): stop the clock at the last heartbeat
+    if s and s.active and not s.paused and not s.autoPaused and s.beat then
+        if s.beat > (s.resumed or s.beat) then s.elapsed = (s.elapsed or 0) + (s.beat - s.resumed) end
+        s.paused = true
+        s.autoPaused = s.beat
+    end
     if s and s.autoPaused then
         if time() - s.autoPaused < 300 then
             s.paused, s.resumed = false, time()
@@ -243,6 +254,7 @@ ns:OnInit(function()
     C_Timer.NewTicker(1, function()
         local cur = sess()
         if cur and cur.active and not cur.paused then
+            if time() - (cur.beat or 0) >= 30 then cur.beat = time() end
             local e = S:Elapsed()
             if e - (cur.lastCurve or 0) >= 60 then
                 cur.lastCurve = e
@@ -259,6 +271,97 @@ ns:OnInit(function()
 end)
 
 ns:Listen("SESSION_UPDATE", function() ns:RefreshPage("pnl") end)
+
+-- AFK: WoW marks you AFK after 5 idle minutes. Pause the session then (taking those 5
+-- idle minutes off the clock) and resume when you're back.
+local AFK_IDLE = 300
+ns:On("PLAYER_FLAGS_CHANGED", function(unit)
+    if unit ~= "player" or not ns.db or ns.S.afkPause == false then return end
+    local s = sess()
+    if not (s and s.active) then return end
+    if UnitIsAFK("player") and not s.paused then
+        local run = time() - (s.resumed or time())
+        s.elapsed = (s.elapsed or 0) + math.max(0, run - math.min(AFK_IDLE, run))
+        s.paused, s.afkPaused = true, true
+        ns.Print("Trading |cffffc238HALTED|r: you're AFK. The session resumes when you're back.")
+        ns:Fire("SESSION_UPDATE")
+    elseif not UnitIsAFK("player") and s.paused and s.afkPaused then
+        s.paused, s.afkPaused, s.resumed = false, nil, time()
+        ns.Print("Welcome back. Trading |cff4af6c3RESUMED|r.")
+        ns:Fire("SESSION_UPDATE")
+    end
+end)
+
+---------------------------------------------------------------------------
+-- Loot from inside an item (disenchanting, prospecting, milling, opening a clam or
+-- lockbox) is a SWAP, not new money: the outputs count, the input's value comes off.
+-- Containers are worth 0 by the rulebook, so opening one only adds its contents.
+---------------------------------------------------------------------------
+local CONSUMES = { [13262] = 1, [31252] = 5, [51005] = 5 } -- Disenchant, Prospecting, Milling
+local lastSpell = { id = nil, t = 0 }
+local targeted = { link = nil, t = 0 }
+local swappedSources = {}
+
+ns:On("UNIT_SPELLCAST_SUCCEEDED", function(unit, _, spellID)
+    if unit == "player" then lastSpell.id, lastSpell.t = spellID, GetTime() end
+end)
+
+ns:OnInit(function()
+    local function onTarget(bag, slot)
+        if SpellIsTargeting and SpellIsTargeting() then
+            local link = ns.GetSlotInfo(bag, slot)
+            if link then targeted.link, targeted.t = link, GetTime() end
+        end
+    end
+    if C_Container and C_Container.UseContainerItem then hooksecurefunc(C_Container, "UseContainerItem", onTarget) end
+    if UseContainerItem then hooksecurefunc("UseContainerItem", onTarget) end
+end)
+
+local function bookSwap(link, n, sourceKey)
+    if not link or (sourceKey and swappedSources[sourceKey]) then return end
+    if sourceKey then swappedSources[sourceKey] = true end
+    if ns.Portfolio then ns.Portfolio:Explain(ns.Portfolio.ID(link), n, "converted") end
+    local s = sess()
+    if not (s and s.active and not s.paused) then return end
+    ns.WhenItemReady(link, function()
+        if sess() ~= s then return end
+        local unit = ns.Valuate(link) or 0
+        local it = s.items[link]
+        if it and it.qty >= n then
+            -- the input was looted this session: just take it out of the holdings
+            it.qty = it.qty - n
+            if it.qty <= 0 then s.items[link] = nil end
+            s.lootCount = math.max(0, (s.lootCount or 0) - n)
+        elseif unit > 0 then
+            s.convert = (s.convert or 0) - unit * n
+        end
+        if unit > 0 then pushTape(s, { t = time(), link = link, qty = n, v = -unit * n, convert = true }) end
+        ns:Fire("SESSION_UPDATE")
+    end)
+end
+
+ns:On("LOOT_OPENED", function()
+    if not ns.db then return end
+    local found = false
+    -- modern clients say which object the loot came from; an "Item-" GUID = from an item
+    if GetLootSourceInfo and GetNumLootItems then
+        for i = 1, (GetNumLootItems() or 0) do
+            local guid = GetLootSourceInfo(i)
+            if type(guid) == "string" and guid:match("^Item%-") then
+                local getLink = (C_Item and C_Item.GetItemLinkByGUID) or GetItemLinkByGUID
+                local link = getLink and getLink(guid)
+                local n = (GetTime() - lastSpell.t < 5 and CONSUMES[lastSpell.id]) or 1
+                if link then bookSwap(link, n, guid) end
+                found = true
+                break
+            end
+        end
+    end
+    -- fallback: a conversion spell was just cast on an item you clicked
+    if not found and GetTime() - lastSpell.t < 5 and CONSUMES[lastSpell.id] and GetTime() - targeted.t < 10 then
+        bookSwap(targeted.link, CONSUMES[lastSpell.id], "spell:" .. lastSpell.t)
+    end
+end)
 
 ---------------------------------------------------------------------------
 -- Page
@@ -420,6 +523,8 @@ local function refresh(p)
                     tt:AddDoubleLine("Vendor", it.vendor and ns.Money(it.vendor) or "--", 0.8, 0.8, 0.8, 1, 1, 1)
                     tt:AddDoubleLine("AH (Auctionator)", it.ah and ns.Money(it.ah) or "no scan", 0.8, 0.8, 0.8, 1, 1, 1)
                     tt:AddDoubleLine("Marked at", (it.src or "---") .. "  " .. ns.Money(it.unit or 0), 0.8, 0.8, 0.8, 1, 1, 1)
+                    if it.note then tt:AddLine(it.note, 1, 0.76, 0.22, true) end
+                    if it.src == "BOX" then tt:AddLine("Container: counts as 0, its contents count when opened", 0.6, 0.6, 0.65, true) end
                     tt:AddDoubleLine("Position", it.qty .. " × = " .. ns.MoneyShort(v), 0.8, 0.8, 0.8, 1, 1, 1)
                 end,
             }
@@ -436,6 +541,7 @@ local function refresh(p)
             local fill
             if t.coin then fill = ns.Color("amber", "COIN") .. "  " .. ns.Money(t.v)
             elseif t.quest then fill = ns.Color("cyan", "QUEST") .. "  " .. ns.Money(t.v)
+            elseif t.convert then fill = ns.Color("grey", "USED") .. "  " .. t.link .. (t.qty > 1 and ns.Color("grey", " x" .. t.qty) or "")
             else fill = (t.reward and (ns.Color("cyan", "REWARD") .. "  ") or "") .. t.link .. (t.qty > 1 and ns.Color("grey", " x" .. t.qty) or "") end
             tape[#tape + 1] = {
                 link = t.link,

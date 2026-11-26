@@ -101,25 +101,30 @@ function ns.MoneyPlain(c)
 end
 
 ---------------------------------------------------------------------------
--- Inventory model: db.chars[key].inv[itemID] = { b=bags, k=bank, m=mail, a=listed, bound=bool }
+-- Inventory model
+--   db.chars[char].inv[key] = { b = bags, k = bank, m = mail, a = AH listings, bound = bool }
+--   db.chars[char].seen     = { b = time, k = time, m = time, a = time } (when each place was last seen)
+--   key = ns.ItemKey(): the itemID, or "itemID:suffix" for random-suffix gear
 ---------------------------------------------------------------------------
 function P.ID(x)
     if not x then return nil end
     if type(x) == "number" then return x end
-    local id = x:match("item:(%d+)")
-    if id then return tonumber(id) end
-    local _, link = ns.GetItemInfo(x)
-    if link then return tonumber(link:match("item:(%d+)")) end
-    for iid, l in pairs(ns.db.links) do
-        if ns.LinkName(l) == x then return iid end
+    if type(x) ~= "string" then return nil end
+    if x:find("item:") or x:match("^%d+$") or x:match("^%d+:%-?%d+$") then return ns.ItemKey(x) end
+    -- a plain item name (e.g. from an AH invoice): exact match among known items first,
+    -- so suffix variants ("Blade of the Bear") stay apart
+    for key, l in pairs(ns.db.links) do
+        if ns.LinkName(l) == x then return key end
     end
+    local _, link = ns.GetItemInfo(x)
+    if link then return ns.ItemKey(link) end
 end
 
 function P.Link(id)
     local l = ns.db.links[id]
     if l then return l end
-    local _, link = ns.GetItemInfo(id)
-    if link then ns.db.links[id] = link end
+    local _, link = ns.GetItemInfo(ns.KeyItemID(id) or id)
+    if link and ns.ItemKey(link) == id then ns.db.links[id] = link end
     return link
 end
 
@@ -135,21 +140,22 @@ local function prune(t, id)
     if e and not (e.b or e.k or e.m or e.a) then t[id] = nil end
 end
 
--- Replace one location for the current character. counts[id] = { q=, link=, bound= }
+-- Replace one location for the current character. counts[key] = { q=, link=, bound= }
 function P:SetLocation(loc, counts)
     local t = invOf()
     if not t then return end
+    local ch = ns.db.chars[ns.CharKey()]
+    ch.seen = ch.seen or {}
+    ch.seen[loc] = time()
     -- Auctions that disappear from your listings without a recorded sale (expired or
-    -- cancelled) always come back by mail. Count them as in transit to the mailbox so
-    -- their cost basis survives until you collect them. The next mailbox scan replaces
-    -- the transit count with what's really there.
+    -- cancelled) always come back by mail: count them as in transit to the mailbox.
     if loc == "a" then
         for id, e in pairs(t) do
             local before, after = e.a or 0, (counts[id] and counts[id].q) or 0
             if after < before then e.m = (e.m or 0) + (before - after) end
         end
     end
-    for id, e in pairs(t) do e[loc] = nil end
+    for _, e in pairs(t) do e[loc] = nil end
     for id, c in pairs(counts) do
         local e = t[id] or {}
         t[id] = e
@@ -183,49 +189,192 @@ function P:Held(id, scopeKey, loc)
     return n
 end
 
+ns:Migration(2, "random-suffix gear gets its own key", function()
+    -- old data stored suffix variants under the plain itemID; drop those inventory
+    -- entries so they're rescanned under the new keys (each character on next login)
+    for _, ch in pairs(ns.db.chars or {}) do
+        for id in pairs(ch.inv or {}) do
+            local link = ns.db.links and ns.db.links[id]
+            if type(id) == "number" and link and ns.ItemKey(link) ~= id then
+                ch.inv[id] = nil
+                ns.db.links[ns.ItemKey(link)] = link
+            end
+        end
+    end
+end)
+
+ns:Migration(3, "cost basis tracks parked units", function()
+    for _, b in pairs(ns.db.basis or {}) do b.parked = b.parked or 0 end
+end)
+
+---------------------------------------------------------------------------
+-- Item journal: every unit that leaves needs a reason
+--   Explained "outs" (sold, used, converted, destroyed, equipped, traded or mailed
+--   away) shrink the cost basis. A drop with no reason is UNEXPLAINED: the cost basis
+--   is kept (those units are "parked") and the drop is listed for you to resolve.
+--   If the units come back later, they're matched to the parked ones automatically.
+---------------------------------------------------------------------------
+local EXPLAIN_TTL = 15 * 60
+P.explained = {}        -- key -> { { q, t, cause }, ... }
+P.lastUse = 0           -- GetTime() of the last spell cast / item use (generic consumption)
+local pendingShrink = {} -- key -> { t = GetTime(), d = deficit } (two-pass confirmation)
+
+function P:Explain(key, q, cause)
+    if not key or not q or q <= 0 then return end
+    local list = P.explained[key]
+    if not list then list = {}; P.explained[key] = list end
+    list[#list + 1] = { q = q, t = GetTime(), cause = cause }
+end
+
+local function takeExplained(key, need)
+    local got, causes = 0, {}
+    local list = P.explained[key]
+    if list then
+        local now = GetTime()
+        for i = #list, 1, -1 do
+            if now - list[i].t > EXPLAIN_TTL then table.remove(list, i) end
+        end
+        while #list > 0 and got < need do
+            local x = list[1]
+            local take = min(x.q, need - got)
+            got = got + take
+            causes[x.cause] = true
+            x.q = x.q - take
+            if x.q <= 0 then table.remove(list, 1) end
+        end
+    end
+    -- generic consumption: you just cast something or used an item (crafting, eating...)
+    if got < need and GetTime() - P.lastUse < 12 then
+        causes.used = true
+        got = need
+    end
+    return got, causes
+end
+
+local function unexplainedList()
+    ns.db.unexplained = ns.db.unexplained or {}
+    return ns.db.unexplained
+end
+
+function P:OpenUnexplained()
+    local n = 0
+    for _, u in ipairs(unexplainedList()) do if not u.resolved then n = n + u.q end end
+    return n
+end
+
+local function recordUnexplained(key, q)
+    local list = unexplainedList()
+    list[#list + 1] = { t = time(), key = key, q = q, c = ns.CharKey() }
+    while #list > 300 do table.remove(list, 1) end
+    ns:Fire("UNEXPLAINED_CHANGED")
+end
+
+-- Units came back: match them to open unexplained entries (oldest first)
+local function matchReturned(key, q)
+    for _, u in ipairs(unexplainedList()) do
+        if q <= 0 then break end
+        if not u.resolved and u.key == key then
+            local take = min(u.q, q)
+            u.q, q = u.q - take, q - take
+            if u.q <= 0 then u.resolved = "returned" end
+        end
+    end
+    ns:Fire("UNEXPLAINED_CHANGED")
+end
+
+-- Resolve an entry: "used" shrinks the cost basis, "keep" just dismisses it
+function P:ResolveUnexplained(entry, how)
+    if not entry or entry.resolved then return end
+    local b = ns.db.basis[entry.key]
+    if how == "used" and b then
+        local q = min(entry.q, b.parked or 0)
+        b.parked = (b.parked or 0) - q
+        b.qty = max(0, b.qty - q)
+    end
+    entry.resolved = how
+    ns:Fire("UNEXPLAINED_CHANGED")
+    self:Changed()
+end
+
 ---------------------------------------------------------------------------
 -- Cost basis
 ---------------------------------------------------------------------------
 function P:Basis(id) return ns.db.basis[id] end
 
--- Safe = we have a full picture of this character (bank scanned) and no AH/mail
--- transaction is mid-flight. Otherwise we never shrink a basis.
+-- Safe = a full, settled picture: bank seen, nothing on the cursor, no AH / mail /
+-- trade in flight. Otherwise we never touch a cost basis.
 function P:SafeToReconcile(ignoreCtx)
     local ch = ns.db.chars[ns.CharKey()]
     if not ch or not ch.bankT then return false end
-    if not ignoreCtx and ns.Ledger and (ns.Ledger.InCtx("auction", 4) or ns.Ledger.InCtx("mail", 4)) then return false end
+    if CursorHasItem and CursorHasItem() then return false end
+    if not ignoreCtx and ns.Ledger and (ns.Ledger.InCtx("auction", 4) or ns.Ledger.InCtx("mail", 4)
+        or ns.Ledger.InCtx("trade", 4)) then return false end
     return true
 end
 
 function P:Reconcile(id, ignoreCtx)
     if not self:SafeToReconcile(ignoreCtx) then return end
-    local function one(iid, b)
-        local h = self:Held(iid)
-        if h < b.qty then b.qty = h end
+    local function one(key, b)
+        b.parked = b.parked or 0
+        local held = self:Held(key)
+        local expected = b.qty - b.parked
+        if held < expected then
+            local deficit = expected - held
+            local p = pendingShrink[key]
+            -- settled snapshots: act only when a second pass, 3+ seconds later, agrees
+            if not ignoreCtx and (not p or GetTime() - p.t < 3) then
+                if not p then pendingShrink[key] = { t = GetTime(), d = deficit } end
+                C_Timer.After(3.5, function() P:Changed() end)
+                return
+            end
+            pendingShrink[key] = nil
+            local got = takeExplained(key, deficit)
+            if got > 0 then b.qty = max(0, b.qty - got) end
+            local rest = deficit - got
+            if rest > 0 then
+                b.parked = b.parked + rest
+                recordUnexplained(key, rest)
+            end
+        else
+            pendingShrink[key] = nil
+            if b.parked > 0 and held > expected then
+                local back = min(b.parked, held - expected)
+                b.parked = b.parked - back
+                matchReturned(key, back)
+            end
+        end
     end
     if id then
         if ns.db.basis[id] then one(id, ns.db.basis[id]) end
     else
-        for iid, b in pairs(ns.db.basis) do one(iid, b) end
+        for key, b in pairs(ns.db.basis) do one(key, b) end
     end
 end
 
 function P:Buy(id, q, paid)
     if not id or not q or q <= 0 or not paid or paid <= 0 then return end
     self:Reconcile(id, true)
-    local b = ns.db.basis[id] or { qty = 0, avg = 0, realized = 0 }
-    local newQ = b.qty + q
-    b.avg = (b.qty * b.avg + paid) / newQ
-    b.qty = newQ
+    local b = ns.db.basis[id] or { qty = 0, avg = 0, realized = 0, parked = 0 }
+    local live = b.qty - (b.parked or 0)
+    if live <= 0 then
+        -- sold out (or only parked units left): the new price starts fresh
+        b.avg, b.qty = paid / q, q + (b.parked or 0)
+    else
+        b.avg = (b.qty * b.avg + paid) / (b.qty + q)
+        b.qty = b.qty + q
+    end
     b.t = time()
     b.src = "auto"
     ns.db.basis[id] = b
 end
 
+-- proceeds = what the sale earned you (sale price minus the AH cut, no deposit refund)
 function P:Sell(id, q, proceeds)
     local b = id and ns.db.basis[id]
-    if not b or b.qty <= 0 or not q or q <= 0 then return nil end
-    local cq = min(q, b.qty)
+    if not b or not q or q <= 0 then return nil end
+    local live = b.qty - (b.parked or 0)
+    if live <= 0 then return nil end
+    local cq = min(q, live)
     local r = cq * (proceeds / q - b.avg)
     b.realized = (b.realized or 0) + r
     ns.db.realized = (ns.db.realized or 0) + r
@@ -263,12 +412,18 @@ end
 function P:SetBasis(id, avg, qty)
     local old = ns.db.basis[id]
     ns.db.basis[id] = { qty = max(0, qty or 0), avg = max(0, avg or 0), t = time(), src = "manual",
-        realized = old and old.realized or 0 }
+        realized = old and old.realized or 0, parked = 0 }
+    for _, u in ipairs(unexplainedList()) do
+        if u.key == id and not u.resolved then u.resolved = "reset" end
+    end
     self:Changed()
 end
 
 function P:ClearBasis(id)
     ns.db.basis[id] = nil
+    for _, u in ipairs(unexplainedList()) do
+        if u.key == id and not u.resolved then u.resolved = "reset" end
+    end
     self:Changed()
 end
 
@@ -282,7 +437,6 @@ function P:Changed()
     C_Timer.After(0.5, function()
         pendingChange = nil
         P:Reconcile()
-        -- value of mail + AH listings per character (feeds AUM)
         for _, ch in pairs(ns.db.chars) do
             local v = 0
             for id, e in pairs(ch.inv or {}) do
@@ -302,7 +456,7 @@ function P:Changed()
 end
 
 ---------------------------------------------------------------------------
--- Feeds: mailbox, AH listings, mail to alts, ledger events
+-- Feeds: mailbox, AH listings, mail and trades to alts, ledger events, item use
 ---------------------------------------------------------------------------
 -- Mail item APIs gained an itemID return in newer clients:
 --   GetInboxItem:    modern 6 returns (name, itemID, tex, count, ...), legacy 5 (name, tex, count, ...)
@@ -323,7 +477,7 @@ ns:On("MAIL_INBOX_UPDATE", function()
         for i = 1, (GetInboxNumItems() or 0) do
             for a = 1, (ATTACHMENTS_MAX_RECEIVE or 16) do
                 local link = GetInboxItemLink and GetInboxItemLink(i, a)
-                if link then
+                if link and ns.Eligibility(link) ~= "skip" then
                     local id = P.ID(link)
                     local q = tonumber(countArg(6, GetInboxItem(i, a))) or 1
                     if id then
@@ -358,7 +512,7 @@ local function scanOwnedModern()
     local counts = {}
     for i = 1, (C_AuctionHouse.GetNumOwnedAuctions() or 0) do
         local info = C_AuctionHouse.GetOwnedAuctionInfo(i)
-        local id = info and info.itemKey and info.itemKey.itemID
+        local id = info and ((info.itemLink and P.ID(info.itemLink)) or (info.itemKey and info.itemKey.itemID))
         if id then
             local c = counts[id] or { q = 0, link = info.itemLink }
             c.q = c.q + (info.quantity or 1)
@@ -371,6 +525,7 @@ ns:On("AUCTION_OWNED_LIST_UPDATE", function() if ns.db then scanOwnedLegacy() en
 ns:On("OWNED_AUCTIONS_UPDATED", function() if ns.db then scanOwnedModern() end end)
 ns:On("AUCTION_HOUSE_CLOSED", function() if ns.db then C_Timer.After(5, function() P:Changed() end) end end)
 ns:On("MAIL_CLOSED", function() if ns.db then C_Timer.After(5, function() P:Changed() end) end end)
+ns:On("TRADE_CLOSED", function() if ns.db then C_Timer.After(5, function() P:Changed() end) end end)
 
 -- Called by ledger hooks
 function P:OnPosted(linkOrID, qty)
@@ -383,39 +538,119 @@ function P:OnBidWon(itemName, count, bid)
     if id then self:Buy(id, count or 1, bid); self:Changed() end
 end
 
+local function ownCharKey(name)
+    if not name or name == "" then return nil end
+    local key = name:find("-") and name or (name .. "-" .. (GetRealmName() or ""))
+    for k in pairs(ns.db.chars) do
+        if k:lower() == key:lower() then return k ~= ns.CharKey() and k or nil end
+    end
+end
+
+-- Mail sent: to your own alt = still yours (in their mailbox); to anyone else = gone (explained)
 function P:OnMailSent(recipient)
     if not recipient or recipient == "" then return end
-    local key = recipient:find("-") and recipient or (recipient .. "-" .. (GetRealmName() or ""))
-    local target
-    for k in pairs(ns.db.chars) do
-        if k:lower() == key:lower() then target = k end
-    end
-    if not target or target == ns.CharKey() then return end
+    local target = ownCharKey(recipient)
     for i = 1, (ATTACHMENTS_MAX_SEND or 12) do
         local link = GetSendMailItemLink and GetSendMailItemLink(i)
-        if link then
+        if link and ns.Eligibility(link) ~= "skip" then
             local id = P.ID(link)
             local q = tonumber(countArg(5, GetSendMailItem(i))) or 1
             if id then
                 if not ns.db.links[id] then ns.db.links[id] = link end
-                self:Add(target, "m", id, q)
+                if target then self:Add(target, "m", id, q) else self:Explain(id, q, "mailed") end
             end
         end
     end
     self:Changed()
 end
 
+-- Trades: remember what you put in; when the trade completes, items to your own alt
+-- stay yours (moved to their bags), anything else is an explained "out".
+local tradeOut, tradePartner, tradeAccepted = {}, nil, false
+local function readTrade()
+    wipe(tradeOut)
+    for i = 1, (MAX_TRADE_ITEMS or 7) - 1 do
+        local link = GetTradePlayerItemLink and GetTradePlayerItemLink(i)
+        if link then
+            local _, _, count = GetTradePlayerItemInfo(i)
+            local id = P.ID(link)
+            if id then tradeOut[#tradeOut + 1] = { id = id, q = count or 1, link = link } end
+        end
+    end
+end
+ns:On("TRADE_SHOW", function()
+    tradePartner = UnitName("NPC")
+    tradeAccepted = false
+end)
+ns:On("TRADE_PLAYER_ITEM_CHANGED", function() readTrade() end)
+ns:On("TRADE_ACCEPT_UPDATE", function(playerAccepted, targetAccepted)
+    readTrade()
+    tradeAccepted = (playerAccepted == 1 or playerAccepted == true) and (targetAccepted == 1 or targetAccepted == true)
+end)
+ns:On("UI_INFO_MESSAGE", function(_, msg)
+    if msg ~= _G.ERR_TRADE_COMPLETE or #tradeOut == 0 then return end
+    local target = ownCharKey(tradePartner)
+    for _, it in ipairs(tradeOut) do
+        if target then P:Add(target, "b", it.id, it.q) else P:Explain(it.id, it.q, "traded") end
+    end
+    wipe(tradeOut)
+    P:Changed()
+end)
+
+-- Generic consumption: casting a spell (crafting, enchanting) or using an item
+ns:On("UNIT_SPELLCAST_SUCCEEDED", function(unit)
+    if unit == "player" then P.lastUse = GetTime() end
+end)
+
+-- Equipping gear takes it out of the portfolio (equipped gear isn't tracked)
+ns:On("PLAYER_EQUIPMENT_CHANGED", function(slot, hasCurrent)
+    if not ns.db then return end
+    local link = GetInventoryItemLink and GetInventoryItemLink("player", slot)
+    if link then P:Explain(P.ID(link), 1, "equipped") end
+end)
+
+-- Destroying an item: remember what was picked up, explain it when it's deleted
+local picked
+ns:OnInit(function()
+    local function hookPickup(bag, slot)
+        local link, count = ns.GetSlotInfo(bag, slot)
+        picked = link and { id = P.ID(link), q = count or 1 } or nil
+    end
+    if C_Container and C_Container.PickupContainerItem then hooksecurefunc(C_Container, "PickupContainerItem", hookPickup) end
+    if PickupContainerItem then hooksecurefunc("PickupContainerItem", hookPickup) end
+    if DeleteCursorItem then
+        hooksecurefunc("DeleteCursorItem", function()
+            if picked and picked.id then P:Explain(picked.id, picked.q, "destroyed") end
+            picked = nil
+        end)
+    end
+    -- using an item from your bags (outside a merchant) = consumed
+    local function onUse(bag, slot)
+        if MerchantFrame and MerchantFrame:IsShown() then return end
+        local link = ns.GetSlotInfo(bag, slot)
+        if link then
+            P.lastUse = GetTime()
+            P:Explain(P.ID(link), 1, "used")
+        end
+    end
+    if C_Container and C_Container.UseContainerItem then hooksecurefunc(C_Container, "UseContainerItem", onUse) end
+    if UseContainerItem then hooksecurefunc("UseContainerItem", onUse) end
+end)
+
 ns:Listen("LEDGER_ENTRY", function(e)
     if e.c ~= ns.CharKey() then return end
     local id = P.ID(e.i)
     if not id or not e.q or e.q <= 0 then return end
+    if ns.IsQuestItem(id) then return end
     if e.k == "AH_BUY" then
         P:Buy(id, e.q, -e.a)
         P:Add(nil, "m", id, e.q) -- in transit to the mailbox
     elseif e.k == "VENDOR_BUY" then
         P:Buy(id, e.q, -e.a)
     elseif e.k == "AH_SALE" then
-        e.r = P:Sell(id, e.q, e.a)
+        -- realized profit uses the sale price minus the AH cut; a returned deposit isn't income
+        local proceeds = (e.g and e.f) and (e.g - e.f) or e.a
+        e.r = P:Sell(id, e.q, proceeds)
         P:Add(nil, "a", id, -e.q)
     elseif e.k == "VENDOR_SALE" then
         e.r = P:Sell(id, e.q, e.a)
@@ -577,7 +812,7 @@ local function build(p)
     end
 
     local sec = UI.Section(p, "Positions · click a row to set your buy price", true)
-    sec:SetPoint("TOPLEFT", 0, -92); sec:SetWidth(W - 190)
+    sec:SetPoint("TOPLEFT", 0, -92); sec:SetWidth(W - 322)
     p.sec = sec
     local base = UI.Button(p, "BASELINE UNCOSTED @ MKT", 180, 18, "default")
     base:SetPoint("TOPRIGHT", 0, -91)
@@ -620,6 +855,69 @@ local function build(p)
     p.list:SetEmptyText("No positions yet. Open your bags, and visit your bank once per character.")
 
     p.editor = BuildEditor(p)
+
+    -- Unexplained: units that disappeared without a known reason
+    p.unxBtn = UI.Button(p, "UNEXPLAINED", 126, 18, "default")
+    p.unxBtn:SetPoint("RIGHT", base, "LEFT", -6, 0)
+    p.unxBtn.label:SetFont(UI.FONT, 10, "")
+    p.unxBtn.tip = "Units that disappeared without a known reason. Their buy price is kept until you decide."
+    local up = UI.Panel(p, C.panel2)
+    UI.SetBorderColor(up, C.orange)
+    up:SetSize(560, 300)
+    up:SetPoint("CENTER", 0, 0)
+    up:SetFrameLevel(p:GetFrameLevel() + 40)
+    up:EnableMouse(true)
+    up:Hide()
+    local uh = UI.Panel(up, C.orange, false)
+    uh:SetPoint("TOPLEFT", 1, -1); uh:SetPoint("TOPRIGHT", -1, -1); uh:SetHeight(20)
+    local ut = UI.Text(uh, 11, { 0, 0, 0 }, "LEFT", UI.FONT, ""); ut:SetPoint("LEFT", 8, 0)
+    ut:SetText("UNEXPLAINED  ·  WHERE DID THESE GO?")
+    local ui = UI.Text(up, 10, C.grey, "LEFT"); ui:SetPoint("TOPLEFT", 10, -28); ui:SetWidth(540); ui:SetWordWrap(true)
+    ui:SetText("Click a row if the items were used up (their buy price is removed). Right-click to keep the buy price, e.g. if they're on an alt or in a bank you haven't opened. Items that turn up again are matched automatically.")
+    up.list = UI.Table(up, {
+        { title = "Date", width = 84 },
+        { title = "Instrument", width = 230 },
+        { title = "Qty", width = 50, justify = "RIGHT" },
+        { title = "Account", width = 120 },
+    }, 540, 196, 16)
+    up.list:SetPoint("TOPLEFT", 10, -62)
+    up.list:SetEmptyText("Nothing unexplained. Every item is accounted for.")
+    local close = UI.Button(up, "CLOSE", 80, 20, "default"); close:SetPoint("BOTTOMRIGHT", -10, 10)
+    close:SetScript("OnClick", function() up:Hide() end)
+    local allUsed = UI.Button(up, "ALL USED UP", 110, 20, "danger"); allUsed:SetPoint("RIGHT", close, "LEFT", -6, 0)
+    allUsed:SetScript("OnClick", function()
+        UI.Confirm("Mark every unexplained item as used up?\nTheir buy prices will be removed.", function()
+            for _, u in ipairs(ns.db.unexplained or {}) do if not u.resolved then P:ResolveUnexplained(u, "used") end end
+        end)
+    end)
+    function up:Fill()
+        local rows = {}
+        local list = ns.db.unexplained or {}
+        for i = #list, 1, -1 do
+            local u = list[i]
+            if not u.resolved and u.q > 0 then
+                local link = P.Link(u.key)
+                rows[#rows + 1] = {
+                    link = link,
+                    cells = { ns.Color("grey", date("%m-%d %H:%M", u.t)), link or tostring(u.key), tostring(u.q), ns.CharLabel(u.c) },
+                    tooltip = function(tt)
+                        if link then pcall(tt.SetHyperlink, tt, link) end
+                        tt:AddLine(" ")
+                        tt:AddLine(u.q .. " disappeared without a known reason", 1, 0.76, 0.22)
+                        tt:AddLine("|cffffc238Click|r used up  ·  |cffffc238Right-click|r keep the buy price", 0.8, 0.8, 0.8)
+                    end,
+                    onClick = function(button)
+                        P:ResolveUnexplained(u, button == "RightButton" and "keep" or "used")
+                        up:Fill()
+                    end,
+                }
+            end
+        end
+        self.list:SetData(rows, true)
+    end
+    p.unxBtn:SetScript("OnClick", function() if up:IsShown() then up:Hide() else up:Fill(); up:Show() end end)
+    p.unxPanel = up
+    ns:Listen("UNEXPLAINED_CHANGED", function() if up:IsShown() then up:Fill() end; ns:RefreshPage("port") end)
 end
 
 local SRC_COLOR = { AH = "cyan", VND = "grey", ["---"] = "dim" }
@@ -780,6 +1078,9 @@ local function pctTxt(upl, cost)
 end
 
 local function refresh(p)
+    local open = P:OpenUnexplained()
+    p.unxBtn:SetText(open > 0 and ("UNEXPLAINED (" .. open .. ")") or "UNEXPLAINED")
+    p.unxBtn:SetStyle(open > 0 and "primary" or "default")
     local me = ns.CharKey()
     local loc = view.loc ~= "ALL" and view.loc or nil
     ns.db.portFold = ns.db.portFold or {}

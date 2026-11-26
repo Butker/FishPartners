@@ -21,7 +21,7 @@ If Windows SmartScreen warns about the file, click **More info → Run anyway** 
 Auctionator is optional but recommended. Without it everything is valued at vendor price.
 
 ## Open it
-- `/fp` (or `/fish`), or left-click the fish on the minimap.
+- `/fp`, or left-click the fish on the minimap.
 - Right-click the minimap fish to start or pause a session.
 - Type functions in the `FPWM>` command line at the bottom: `PNL`, `AUM`, `GL`, `CMPL`, `START`, `PAUSE`, `STOP`, `MTM`, `HELP`.
 
@@ -36,12 +36,14 @@ Auctionator is optional but recommended. Without it everything is valued at vend
 | 6 | CMPL | **Risk & Compliance** | Settings. |
 
 ## Valuation policy
-1. Soulbound / BoP / quest items → vendor price.
-2. Otherwise read Auctionator's last scan price.
-3. Use the AH price only if it beats vendor by:
+1. Quest items aren't tracked. Containers (clams, lockboxes) count as 0 until opened. Soulbound / BoP items → vendor price.
+2. Thin markets are capped: an AH price can be at most 3× its recent median, or 50× vendor when there's no history yet. AH prices older than 7 days (adjustable) are marked stale.
+3. Otherwise read Auctionator's last scan price.
+4. Use the AH price only if it beats vendor by:
    - **Weapons & armor:** 10% (adjustable)
    - **Everything else:** 5% (adjustable)
-4. Optional: deduct the 5% AH cut before comparing.
+5. Optional: deduct the 5% AH cut before comparing.
+6. In a session, disenchanting / prospecting / milling is a swap: the input leaves, the result is added.
 
 ## Party view (PNL → PARTY)
 - **Party book:** everyone in your group with their item fills, item value, coin share, total, share of the party total, and gold per hour. Click a member to see what they've looted. The party tape shows every fill in the group as it happens.
@@ -70,7 +72,8 @@ Auctionator is optional but recommended. Without it everything is valued at vend
 - **Sales** book realized P&L against the average. Selling doesn't change the average.
 - **Sold out, then rebuy:** once you hold 0, the next buy starts fresh at what you actually paid.
 - **Looted or crafted units** stay "uncosted" (shown with `~`), so they don't drag your average down. *BASELINE UNCOSTED @ MKT* gives every uncosted item today's market price as its basis.
-- Items mailed to your own alts are tracked in transit. Items you trade away or use up reduce the units covered.
+- Items mailed or traded to your own alts keep their buy price. Items you sell, trade away, use, equip or destroy reduce the units covered.
+- **Unexplained:** if items vanish and the addon doesn't know why, they keep their buy price and go to the **UNEXPLAINED** list. Click an entry for "used up", right-click for "keep". Items that reappear are matched automatically.
 - Visit your bank once on each character so the portfolio is complete.
 
 ## Portfolio views
@@ -88,13 +91,15 @@ Auctionator is optional but recommended. Without it everything is valued at vend
 - **Profit on sale:** collecting an AH sale prints a line like `SOLD 5x [Thorium Bar] for 7.00g · +1.00g realized (+16.7%)`.
 - **Expired tracking:** expired-auction mails are counted, which feeds sell-through % and the "doesn't sell" signals.
 - **Morning report** in chat on your first login each day. Type `REPORT` in the command line to show it again.
-- **Ledger:** right-click an entry to delete it, which is useful for cleaning up entries recorded before v1.4.
+- **Ledger:** right-click an entry to change its category or delete it.
 
 ## Troubleshooting
+- Type `/fp check` to run the self-checks (gold balance, session, cost basis, inventory). They also run on their own after login and every hour, and say something only when there's a problem.
 - Type `/fp diag` and send the output. It shows which AH API your client has, which AH events the addon has seen, whether it can read your sell slot, and any recent errors.
 - If a page hits an error, it now shows the error text at the bottom instead of going blank.
 
 ## Notes
+- Developers: `pip install lupa` then `python tests/run_all.py` runs every scenario against a simulated game.
 - Sessions pause automatically on logout. After a `/reload` (under 5 min) they resume automatically.
 - AH buys are logged when you click buy (this also works with Auctionator's buy buttons). AH sales are logged when you collect the money from the mailbox.
 - Bank value updates each time you open your bank.

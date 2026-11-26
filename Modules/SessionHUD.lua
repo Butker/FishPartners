@@ -201,6 +201,7 @@ function H:Refresh()
             local name
             if t.coin then name = ns.Color("amber", "Coin")
             elseif t.quest then name = ns.Color("cyan", "Quest gold")
+            elseif t.convert then name = ns.Color("grey", "Used ") .. (t.link or "?")
             else name = (t.reward and ns.Color("cyan", "Reward ") or "") .. (t.link or "?") .. (t.qty and t.qty > 1 and ns.Color("grey", " x" .. t.qty) or "") end
             l.name:SetText(name)
             l.val:SetText(ns.PnL(t.v or 0))

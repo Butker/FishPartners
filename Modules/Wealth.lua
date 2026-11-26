@@ -17,15 +17,33 @@ local function me()
     return ch, key
 end
 
-local function scanBags(first, last, includeBank)
+-- Which container indexes hold your bags and your bank. Uses the game's own numbering
+-- when it has it (modern clients add a reagent bag and renumber the bank bags).
+local BI = Enum and Enum.BagIndex
+function A.BagIndexes()
+    local out = {}
+    local nb = NUM_BAG_SLOTS or 4
+    for bag = 0, nb do out[#out + 1] = bag end
+    if BI and BI.ReagentBag then out[#out + 1] = BI.ReagentBag end
+    return out
+end
+function A.BankIndexes()
+    local out = { (BI and BI.Bank) or BANK_CONTAINER or -1 }
+    local first = (BI and BI.BankBag_1) or ((NUM_BAG_SLOTS or 4) + 1)
+    for i = 0, (NUM_BANKBAGSLOTS or 6) - 1 do out[#out + 1] = first + i end
+    local reagentBank = BI and (BI.Reagentbank or BI.ReagentBank)
+    if reagentBank and (not IsReagentBankUnlocked or IsReagentBankUnlocked()) then out[#out + 1] = reagentBank end
+    return out
+end
+
+local function scanBags(indexes)
     local value, holdings, missing, counts = 0, {}, false, {}
-    local function scan(bag)
+    for _, bag in ipairs(indexes) do
         for slot = 1, ns.GetNumSlots(bag) do
-            local link, count, isBound, itemID = ns.GetSlotInfo(bag, slot)
-            if link and ns.IsQuestItem(itemID or link) then link = nil end
-            if link then
+            local link, count, isBound = ns.GetSlotInfo(bag, slot)
+            if link and ns.Eligibility(link) ~= "skip" then
                 count = count or 1
-                local id = itemID or tonumber(link:match("item:(%d+)"))
+                local id = ns.ItemKey(link)
                 if id then
                     local c = counts[id] or { q = 0, link = link }
                     c.q = c.q + count
@@ -35,7 +53,7 @@ local function scanBags(first, last, includeBank)
                 local unit = ns.Valuate(link, isBound)
                 if id and ns.IsHiddenItem and ns.IsHiddenItem(id) then unit = 0 end
                 if unit then
-                    local v = unit * (count or 1)
+                    local v = unit * count
                     value = value + v
                     local h = holdings[link]
                     if h then h.q, h.v = h.q + count, h.v + v else holdings[link] = { q = count, v = v } end
@@ -45,9 +63,13 @@ local function scanBags(first, last, includeBank)
             end
         end
     end
-    if includeBank then scan(BANK_CONTAINER or -1) end
-    for bag = first, last do scan(bag) end
     return value, holdings, missing, counts
+end
+
+-- A scan only counts when it's settled: nothing on the cursor (an item mid-move would
+-- look missing). Otherwise try again shortly.
+local function unsettled()
+    return CursorHasItem and CursorHasItem()
 end
 
 local function topHoldings(map, n)
@@ -72,9 +94,9 @@ end
 
 local retries = 0
 function A:ScanBags()
+    if unsettled() then C_Timer.After(1, function() A:ScanBags() end) return end
     local ch = me()
-    local nb = NUM_BAG_SLOTS or 4
-    local v, map, missing, counts = scanBags(0, nb, false)
+    local v, map, missing, counts = scanBags(A.BagIndexes())
     ch.bags = v
     if ns.Portfolio then ns.Portfolio:SetLocation("b", counts) end
     ch.bagTop = topHoldings(map, 8)
@@ -90,9 +112,9 @@ function A:ScanBags()
 end
 
 function A:ScanBank()
+    if unsettled() then C_Timer.After(1, function() if BankFrame and BankFrame:IsShown() or (ns.Ledger and ns.Ledger.InCtx("bank", 0)) then A:ScanBank() end end) return end
     local ch = me()
-    local nb = NUM_BAG_SLOTS or 4
-    local v, map, _, counts = scanBags(nb + 1, nb + (NUM_BANKBAGSLOTS or 6), true)
+    local v, map, _, counts = scanBags(A.BankIndexes())
     ch.bank = v
     if ns.Portfolio then ns.Portfolio:SetLocation("k", counts) end
     ch.bankTop = topHoldings(map, 8)
@@ -259,6 +281,12 @@ local function refresh(p)
                 tt:AddDoubleLine("Bags (MTM)", ns.Money(ch.bags or 0), 0.8, 0.8, 0.8, 1, 1, 1)
                 tt:AddDoubleLine("Bank (MTM)", ch.bankT and ns.Money(ch.bank or 0) or "not scanned", 0.8, 0.8, 0.8, 1, 1, 1)
                 tt:AddDoubleLine("Mail + AH listings", ns.Money(ch.otherV or 0), 0.8, 0.8, 0.8, 1, 1, 1)
+                local seen = ch.seen or {}
+                local function age(t) return t and ago(t) or ns.Color("red", "never") end
+                tt:AddLine(" ")
+                tt:AddLine("Last seen", 0.98, 0.55, 0.12)
+                tt:AddDoubleLine("Bags · Bank", age(seen.b or ch.t) .. "  ·  " .. age(seen.k or ch.bankT), 0.8, 0.8, 0.8, 1, 1, 1)
+                tt:AddDoubleLine("Mailbox · AH listings", age(seen.m) .. "  ·  " .. age(seen.a), 0.8, 0.8, 0.8, 1, 1, 1)
                 local top = {}
                 for _, h in ipairs(ch.bagTop or {}) do top[#top + 1] = h end
                 for _, h in ipairs(ch.bankTop or {}) do top[#top + 1] = h end

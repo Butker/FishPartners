@@ -65,7 +65,9 @@ local DEFAULTS = {
         postingDesk    = true,
         hudAuto        = true,
         hudScale       = 1.0,
-        instanceBell   = true,  -- ask to open/book a session when entering a dungeon or raid  -- open the mini session window when a session starts
+        instanceBell   = true,
+        afkPause       = true,  -- pause the session while WoW marks you AFK
+        priceStaleDays = 7,     -- AH prices older than this are marked stale  -- ask to open/book a session when entering a dungeon or raid  -- open the mini session window when a session starts
         minimapHide    = false,
         minimapAngle   = 200,
         scale          = 1.0,
@@ -134,6 +136,25 @@ function ns:Fire(msg, ...)
     end
 end
 
+-- Data upgrades: each module registers numbered steps; at login every step newer than
+-- the saved data version runs once, in order. One place for all data cleanups.
+local migrations = {}
+function ns:Migration(version, name, fn)
+    migrations[#migrations + 1] = { v = version, name = name, fn = fn }
+end
+local function runMigrations()
+    table.sort(migrations, function(a, b) return a.v < b.v end)
+    local current = ns.db.schema or 0
+    for _, m in ipairs(migrations) do
+        if m.v > current then
+            local ok, err = pcall(m.fn)
+            if not ok then geterrorhandler()("FishPartners upgrade " .. m.v .. " (" .. m.name .. "): " .. tostring(err)) end
+            current = m.v
+        end
+    end
+    ns.db.schema = current
+end
+
 -- Init callbacks run at PLAYER_LOGIN once saved vars are merged
 local inits = {}
 function ns:OnInit(fn) table.insert(inits, fn) end
@@ -143,6 +164,7 @@ ns:On("PLAYER_LOGIN", function()
     FishPartnersCharDB = merge(FishPartnersCharDB or {}, CHAR_DEFAULTS)
     ns.db, ns.cdb = FishPartnersDB, FishPartnersCharDB
     ns.S = ns.db.settings
+    runMigrations()
     for i = 1, #inits do
         local ok, err = pcall(inits[i])
         if not ok then geterrorhandler()(err) end

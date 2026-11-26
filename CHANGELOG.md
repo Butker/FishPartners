@@ -1,5 +1,39 @@
 # Changelog
 
+## [2.0.0] — Bulletproof books
+Your numbers should now be right in the tricky cases, and the addon checks its own math.
+
+**Self-checks**
+- The addon audits itself 45 seconds after login and once an hour. It checks that the ledger adds up to your real gold change, that sessions have no negative positions, and that the cost basis never covers more units than you hold. If something's off you get one chat line. Type `/fp check` to see every check.
+- Saved data now has a version number, so future data cleanups run once, in order, at login.
+
+**Pricing rules**
+- Containers (clams, lockboxes, bags of loot) count as 0 until you open them. The contents count when they drop, so nothing is counted twice.
+- Thin markets are capped: a single silly AH listing can't inflate your numbers. An AH price is capped at 3× its recent median, or 50× the vendor price if there's no history yet. Capped values are marked in tooltips.
+- AH prices older than 7 days are marked as stale (adjustable on the Compliance tab).
+- Random-suffix gear ("of the Bear", "of the Eagle") is valued and tracked per variant.
+
+**Ledger**
+- Selling several items at once (or a bag of junk) books one line per item, even when the game merges the gold into one change.
+- Damaged gear sold to a vendor is matched correctly.
+- AH bids, commodity buys, deposits, COD, postage, repairs, buybacks and guild bank deposits/withdrawals are matched by their exact amount.
+- New categories: Guild bank in / out.
+- Right-click a ledger entry to change its category (or delete it).
+
+**Portfolio**
+- Items that disappear with no known reason no longer lose their buy price. They go to a new **UNEXPLAINED** list (button next to BASELINE). Click an entry to mark it as used up, right-click to keep it. If the items turn up again (another bag, the bank), they're matched automatically.
+- Trades to your own alts keep the buy price, just like mail.
+- Bags aren't scanned while you hold an item on the cursor, so moving items around can't cause false changes.
+
+**Session**
+- Disenchanting, prospecting and milling are swaps: the item you used leaves the session and the result is added. No double counting.
+- Opening a clam or box during a session counts its contents, not the box.
+- If the game crashes, the session clock stops at the moment it last saw you instead of counting the hours you were away.
+- The session pauses while you're AFK and takes the idle minutes off the clock (can be switched off on the Compliance tab).
+
+**Tests**
+- The addon ships with its test suite (`tests/`): 17 scenario files that simulate the game, including a new one covering every case above.
+
 ## [1.9.4]
 - The slash command is now just **/fp** (for example `/fp`, `/fp start`, `/fp hud`, `/fp update`). The old /fpwm, /fish and /fishpartners commands are gone.
 

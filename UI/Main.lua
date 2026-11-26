@@ -144,7 +144,7 @@ local function BuildStatus(parent)
     eb:SetMaxLetters(32)
     local hint = UI.Text(bar, 10, C.dim, "LEFT")
     hint:SetPoint("LEFT", eb, "LEFT", 0, 0)
-    hint:SetText("PNL AUM PORT RPT GL CMPL · START STOP HUD UPDATE · HELP  <GO>")
+    hint:SetText("PNL AUM PORT RPT GL CMPL · START STOP HUD CHECK · HELP  <GO>")
     eb:SetScript("OnEditFocusGained", function() hint:Hide() end)
     eb:SetScript("OnEditFocusLost", function(self) if self:GetText() == "" then hint:Show() end end)
     eb:SetScript("OnEscapePressed", function(self) self:SetText(""); self:ClearFocus() end)
@@ -322,6 +322,7 @@ COMMANDS = {
     PORT = function() ns:ShowPage("port") end,
     RPT = function() ns:ShowPage("rpt") end,
     HUD = function() if ns.HUD then ns.HUD:Toggle() end end,
+    CHECK = function() if ns.Audit then ns.Audit:Print() end end,
     UPDATE = function()
         local U = ns.Update
         if U and U.newer then
@@ -360,6 +361,11 @@ COMMANDS = {
         local st = ns.Session and ns.Session:Stats() or {}
         P("Session: " .. (st.active and ((st.paused and "paused" or "running") .. " · " .. ns.Duration(st.elapsed or 0)) or "none")
             .. " · ledger entries: " .. #ns.db.ledger)
+        if ns.Audit then
+            local r = ns.Audit:Run()
+            local n = ns.Audit:Failures(r)
+            P("Self-check: " .. (n == 0 and ns.Color("green", "all passed") or ns.Color("red", n .. " failed")) .. " (/fp check for details)")
+        end
         if #ns.errors == 0 then P("Errors: none") else
             for i = math.max(1, #ns.errors - 2), #ns.errors do P(ns.Color("red", "Error: ") .. ns.errors[i]) end
         end

@@ -26,6 +26,8 @@ L.CATS = {
     TRAVEL      = { "Flight path",      "OTHER" },
     TRAINING    = { "Class training",   "OTHER" },
     BANK        = { "Bank slot",        "OTHER" },
+    GUILD_IN    = { "Guild bank withdrawal", "OTHER" },
+    GUILD_OUT   = { "Guild bank deposit",    "OTHER" },
     OTHER_IN    = { "Other income",     "OTHER" },
     OTHER_OUT   = { "Other expense",    "OTHER" },
 }
@@ -90,6 +92,17 @@ local function takeTags(delta, now)
             if (delta > 0 and sum > delta) or (delta < 0 and sum < delta) then break end
         end
     end
+    -- 2b) damaged gear sells for less than its vendor price: a vendor-sale tag that
+    --     expected MORE than this sale paid is still the best match
+    if delta > 0 then
+        for i, tg in ipairs(tags) do
+            if tg.cat == "VENDOR_SALE" and tg.expect and tg.expect > delta then
+                table.remove(tags, i)
+                tg.expect = delta
+                return { tg }
+            end
+        end
+    end
     -- 3) ordinary action tags (no fixed amount), sign must agree
     for i, tg in ipairs(tags) do
         if not tg.expect and (not tg.sign or (tg.sign > 0) == (delta > 0)) then
@@ -126,6 +139,23 @@ local function record(e)
     ns:Fire("LEDGER_ENTRY", e)
 end
 
+local getCount = (C_Item and C_Item.GetItemCount) or GetItemCount
+local measured = {} -- "itemID:preCount" -> units already assigned from that bag snapshot
+
+-- Vendor purchases: count what actually arrived in your bags instead of trusting the click
+local function measuredQty(tg)
+    if not (tg.preCount and tg.itemID and getCount) then return tg.qty end
+    local ok, now = pcall(getCount, tg.itemID)
+    if not ok or type(now) ~= "number" then return tg.qty end
+    local group = tg.itemID .. ":" .. tg.preCount
+    local got = now - tg.preCount - (measured[group] or 0)
+    if got > 0 then
+        measured[group] = (measured[group] or 0) + got
+        return got
+    end
+    return tg.qty
+end
+
 local function book(delta, at)
     local list = takeTags(delta, GetTime())
     if not list then
@@ -133,10 +163,73 @@ local function book(delta, at)
     else
         for _, tg in ipairs(list) do
             record({ t = at, c = ns.CharKey(), k = tg.cat, a = (#list > 1 and tg.expect) or delta,
-                i = tg.item, q = tg.qty, n = tg.note, f = tg.fee, g = tg.gross })
+                i = tg.item, q = (tg.cat == "VENDOR_BUY") and measuredQty(tg) or tg.qty, n = tg.note, f = tg.fee, g = tg.gross })
         end
     end
     ns:RefreshPage("gl")
+end
+
+-- Fix an entry's category by hand (e.g. an "Other" that you know was a trade)
+function L.SetCategory(entry, cat)
+    if not entry or not L.CATS[cat] then return end
+    entry.k = cat
+    entry.manual = true
+    ns:RefreshPage("gl")
+end
+
+local menu
+function L.ShowEntryMenu(entry)
+    if not menu then
+        menu = CreateFrame("Frame", "FishPartnersLedgerMenu", UIParent)
+        menu:SetFrameStrata("DIALOG")
+        menu:SetToplevel(true)
+        menu:EnableMouse(true)
+        UI.Fill(menu, C.panel2, 0.98)
+        UI.Border(menu, C.orange)
+        menu.title = UI.Text(menu, 10, C.orange, "LEFT", UI.FONT, "")
+        menu.title:SetPoint("TOPLEFT", 8, -6)
+        menu.buttons = {}
+        tinsert(UISpecialFrames, "FishPartnersLedgerMenu")
+    end
+    -- categories with the same sign as the entry, sorted by name
+    local cats = {}
+    for k, v in pairs(L.CATS) do
+        local incoming = (k == "LOOT" or k == "QUEST" or k == "AH_SALE" or k == "AH_REFUND" or k == "VENDOR_SALE"
+            or k == "MAIL_IN" or k == "TRADE_IN" or k == "OTHER_IN" or k == "GUILD_IN")
+        if incoming == (entry.a > 0) and k ~= entry.k then cats[#cats + 1] = { k = k, label = v[1] } end
+    end
+    table.sort(cats, function(a, b) return a.label < b.label end)
+    cats[#cats + 1] = { k = "__delete", label = "Delete this entry" }
+    cats[#cats + 1] = { k = "__cancel", label = "Cancel" }
+    menu.title:SetText("MOVE TO CATEGORY")
+    for i, c in ipairs(cats) do
+        local b = menu.buttons[i]
+        if not b then
+            b = UI.Button(menu, "", 176, 16, "default")
+            b.label:SetFont(UI.FONT, 10, "")
+            menu.buttons[i] = b
+        end
+        b:ClearAllPoints()
+        b:SetPoint("TOPLEFT", 8, -20 - (i - 1) * 17)
+        b:SetText(c.label)
+        b:SetStyle(c.k == "__delete" and "danger" or "default")
+        b:SetScript("OnClick", function()
+            menu:Hide()
+            if c.k == "__delete" then
+                UI.Confirm("Delete this ledger entry?", function() L.Delete(entry) end)
+            elseif c.k ~= "__cancel" then
+                L.SetCategory(entry, c.k)
+            end
+        end)
+        b:Show()
+    end
+    for i = #cats + 1, #menu.buttons do menu.buttons[i]:Hide() end
+    menu:SetSize(192, 28 + #cats * 17)
+    local x, y = GetCursorPosition()
+    local sc = UIParent:GetEffectiveScale()
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x / sc, y / sc)
+    menu:Show()
 end
 
 function L.Delete(entry)
@@ -146,6 +239,8 @@ function L.Delete(entry)
     end
     ns:RefreshPage("gl")
 end
+
+function L.PendingCount() return #pending end
 
 local function flush()
     local now = GetTime()
@@ -215,26 +310,40 @@ local function InstallHooks()
         local link = GetAuctionItemLink and GetAuctionItemLink(listType, index)
         local _, _, count, _, _, _, _, _, _, buyout = GetAuctionItemInfo(listType, index)
         if buyout and buyout > 0 and bid and bid >= buyout then
-            L.Tag("AH_BUY", -1, { item = link, qty = count })
+            L.Tag("AH_BUY", -1, { item = link, qty = count, expect = bid and -bid or nil })
         else
-            L.Tag("AH_BID", -1, { item = link, qty = count, note = "bid (refunded if outbid)" })
+            L.Tag("AH_BID", -1, { item = link, qty = count, expect = bid and -bid or nil, note = "bid (refunded if outbid)" })
         end
     end)
     if C_AuctionHouse then
         hook(C_AuctionHouse, "PlaceBid", function(auctionID, amount)
             local a = ns.Market and ns.Market.LookupAuction(auctionID)
+            local exp = (amount and amount > 0) and -amount or nil
             if a and a.buyout and amount and amount < a.buyout then
-                L.Tag("AH_BID", -1, { item = a.link, qty = a.qty, note = "bid (refunded if outbid)" })
+                L.Tag("AH_BID", -1, { item = a.link, qty = a.qty, expect = exp, note = "bid (refunded if outbid)" })
             else
-                L.Tag("AH_BUY", -1, { item = a and a.link, qty = a and a.qty })
+                L.Tag("AH_BUY", -1, { item = a and a.link, qty = a and a.qty, expect = exp })
             end
         end)
         hook(C_AuctionHouse, "ConfirmCommoditiesPurchase", function(itemID, qty)
-            L.Tag("AH_BUY", -1, { item = itemLinkFromID(itemID), qty = qty })
+            local q = L.commodityQuote
+            local exp = (q and q.total and GetTime() - q.t < 60) and -q.total or nil
+            L.Tag("AH_BUY", -1, { item = itemLinkFromID(itemID), qty = qty, expect = exp })
+            L.commodityQuote = nil
         end)
-        local function modernPost(loc, _, qty)
+        local function modernPost(loc, duration, qty)
             local link = C_Item and C_Item.GetItemLink and loc and C_Item.GetItemLink(loc)
-            L.Tag("AH_DEPOSIT", -1, { item = link, qty = qty })
+            local dep
+            local CAH = C_AuctionHouse
+            local okC, isCommodity = pcall(function() return C_AuctionHouse.GetItemCommodityStatus and C_AuctionHouse.GetItemCommodityStatus(loc) == 2 end)
+            if okC and isCommodity and CAH.CalculateCommodityDeposit then
+                local ok, d = pcall(CAH.CalculateCommodityDeposit, C_Item.GetItemID and C_Item.GetItemID(loc), duration, qty)
+                if ok then dep = d end
+            elseif CAH.CalculateItemDeposit then
+                local ok, d = pcall(CAH.CalculateItemDeposit, loc, duration, qty)
+                if ok then dep = d end
+            end
+            L.Tag("AH_DEPOSIT", -1, { item = link, qty = qty, expect = (type(dep) == "number" and dep > 0) and -dep or nil })
             if ns.Portfolio then ns.Portfolio:OnPosted(link, qty) end
         end
         hook(C_AuctionHouse, "PostItem", modernPost)
@@ -308,8 +417,21 @@ local function InstallHooks()
     hook(_G, "AutoLootMailItem", onTakeMoney)
     hook(_G, "AutoLootMailItem", onTakeItem)
     hook(_G, "TakeInboxItem", onTakeItem)
+    -- cash on delivery: paying for a COD mail when you take its item
+    local function onTakeCOD(index)
+        local _, _, sender, subject, _, cod, daysLeft = GetInboxHeaderInfo(index)
+        if cod and cod > 0 then
+            L.Tag("MAIL_OUT", -1, { expect = -cod, key = "cod|" .. tostring(sender) .. tostring(subject) .. cod .. floor((daysLeft or 0) * 1440),
+                note = "cash on delivery to " .. tostring(sender) })
+        end
+    end
+    hook(_G, "TakeInboxItem", onTakeCOD)
+    hook(_G, "AutoLootMailItem", onTakeCOD)
     hook(_G, "SendMail", function(recipient, subject)
-        L.Tag("MAIL_OUT", -1, { note = "to " .. tostring(recipient) .. (subject and subject ~= "" and (": " .. subject) or "") })
+        -- postage + any money attached (read before the send frame clears)
+        local cost = (GetSendMailPrice and GetSendMailPrice() or 0) + (GetSendMailMoney and GetSendMailMoney() or 0)
+        L.Tag("MAIL_OUT", -1, { expect = cost > 0 and -cost or nil,
+            note = "to " .. tostring(recipient) .. (subject and subject ~= "" and (": " .. subject) or "") })
         if ns.Portfolio then ns.Portfolio:OnMailSent(recipient) end
     end)
 
@@ -319,7 +441,7 @@ local function InstallHooks()
         local link, count = ns.GetSlotInfo(bag, slot)
         if not link then return end
         local vendor = select(11, ns.GetItemInfo(link))
-        if vendor and vendor > 0 then L.Tag("VENDOR_SALE", 1, { item = link, qty = count }) end
+        if vendor and vendor > 0 then L.Tag("VENDOR_SALE", 1, { item = link, qty = count, expect = vendor * (count or 1) }) end
     end
     if C_Container then hook(C_Container, "UseContainerItem", onUseItem) end
     hook(_G, "UseContainerItem", onUseItem)
@@ -332,13 +454,31 @@ local function InstallHooks()
             local info = C_MerchantFrame.GetItemInfo(index)
             stack = info and info.stackCount
         end
-        L.Tag("VENDOR_BUY", -1, { item = link, qty = qty or stack })
+        local itemID = link and ns.KeyItemID(ns.ItemKey(link))
+        local pre
+        if itemID and getCount then
+            local ok, n = pcall(getCount, itemID)
+            if ok and type(n) == "number" then pre = n end
+        end
+        L.Tag("VENDOR_BUY", -1, { item = link, qty = qty or stack, itemID = itemID, preCount = pre })
     end)
     hook(_G, "BuybackItem", function(index)
-        L.Tag("VENDOR_BUY", -1, { item = GetBuybackItemLink and GetBuybackItemLink(index), note = "buyback" })
+        local _, _, price, quantity = GetBuybackItemInfo and GetBuybackItemInfo(index)
+        L.Tag("VENDOR_BUY", -1, { item = GetBuybackItemLink and GetBuybackItemLink(index), qty = quantity,
+            expect = (price and price > 0) and -price or nil, note = "buyback" })
     end)
     hook(_G, "RepairAllItems", function(guild)
-        if not guild then L.Tag("REPAIR", -1, {}) end
+        if not guild then
+            local cost = GetRepairAllCost and GetRepairAllCost()
+            L.Tag("REPAIR", -1, { expect = (cost and cost > 0) and -cost or nil })
+        end
+    end)
+    -- guild bank gold
+    hook(_G, "DepositGuildBankMoney", function(amount)
+        if amount and amount > 0 then L.Tag("GUILD_OUT", -1, { expect = -amount }) end
+    end)
+    hook(_G, "WithdrawGuildBankMoney", function(amount)
+        if amount and amount > 0 then L.Tag("GUILD_IN", 1, { expect = amount }) end
     end)
 end
 
@@ -361,6 +501,10 @@ for ev, v in pairs(CTX_EVENTS) do
 end
 
 ns:On("CHAT_MSG_MONEY", function() L.Tag("LOOT", 1, {}) end)
+-- the price the game quotes for a commodity purchase (used as the expected amount)
+ns:On("COMMODITY_PRICE_UPDATED", function(_, total)
+    if total then L.commodityQuote = { total = total, t = GetTime() } end
+end)
 ns:On("QUEST_TURNED_IN", function(_, _, money)
     if money and money > 0 then L.Tag("QUEST", 1, {}) end
 end)
@@ -518,12 +662,11 @@ local function refresh(p)
                 if e.f and e.f > 0 then tt:AddDoubleLine("AH cut", ns.Money(e.f), 0.8, 0.8, 0.8, 1, 1, 1) end
                 if e.r then tt:AddDoubleLine("Realized vs avg cost", ns.Money(e.r, true), 0.8, 0.8, 0.8, 1, 1, 1) end
                 tt:AddLine(date("%Y-%m-%d %H:%M:%S", e.t), 0.5, 0.5, 0.55)
-                tt:AddLine("|cffffc238Right-click|r to delete this entry", 0.5, 0.5, 0.55)
+                if e.manual then tt:AddLine("Category set by you", 0.5, 0.5, 0.55) end
+                tt:AddLine("|cffffc238Right-click|r change category or delete", 0.5, 0.5, 0.55)
             end,
             onClick = function(button)
-                if button == "RightButton" then
-                    UI.Confirm("Delete this ledger entry?\n" .. cat[1] .. "  " .. ns.MoneyShort(e.a, true), function() L.Delete(e) end)
-                end
+                if button == "RightButton" then L.ShowEntryMenu(e) end
             end,
         }
     end

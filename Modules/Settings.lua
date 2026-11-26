@@ -31,6 +31,8 @@ local function build(p)
         function() return S().otherMargin end, function(v) S().otherMargin = v; changedValuation() end, 0, 500, 1, pct, colW))
     p.controls[#p.controls + 1] = add(UI.Toggle(l, "Deduct the AH cut from AH prices (net proceeds)",
         function() return S().deductAHCut end, function(v) S().deductAHCut = v; changedValuation() end, colW))
+    p.controls[#p.controls + 1] = add(UI.Stepper(l, "Mark AH prices as stale after (days)",
+        function() return S().priceStaleDays or 7 end, function(v) S().priceStaleDays = v; changedValuation() end, 1, 60, 1, nil, colW), 24)
     p.controls[#p.controls + 1] = add(UI.Stepper(l, "AH cut",
         function() return S().ahCut end, function(v) S().ahCut = v; changedValuation() end, 0, 30, 1, pct, colW), 34)
 
@@ -83,6 +85,8 @@ local function build(p)
         function() return S().dailyReport end, function(v) S().dailyReport = v end, colW), 22)
     p.controls[#p.controls + 1] = addR(UI.Toggle(r, "Mini session window when a session starts",
         function() return S().hudAuto end, function(v) S().hudAuto = v end, colW), 24)
+    p.controls[#p.controls + 1] = addR(UI.Toggle(r, "Pause the session while you're AFK",
+        function() return S().afkPause ~= false end, function(v) S().afkPause = v end, colW), 24)
     p.controls[#p.controls + 1] = addR(UI.Toggle(r, "Opening bell when entering a dungeon or raid",
         function() return S().instanceBell end, function(v) S().instanceBell = v end, colW), 24)
     p.controls[#p.controls + 1] = addR(UI.Stepper(r, "Mini window scale",
