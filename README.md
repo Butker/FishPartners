@@ -3,9 +3,10 @@
 A Bloomberg-terminal-style gold analytics addon for World of Warcraft: Forever.
 
 ## Install with WowUp (auto-updates)
-1. Install [WowUp](https://wowup.io) and make sure your WoW Forever installation is listed. If it isn't, use **Add New** in WowUp's WoW client settings and select the Forever game executable.
-2. Go to **Get Addons → Install from URL** and paste this repository's GitHub URL.
-3. That's it. WowUp picks up every new release automatically.
+1. Install or update [WowUp](https://wowup.io) to **2.24.1 or newer**. Older versions don't recognise WoW Forever.
+2. In WowUp's settings, check that your Forever installation is listed **as Forever**. Don't add it by hand; let WowUp find it. If you added it by hand earlier, remove that entry and re-scan.
+3. Pick the Forever installation in the switcher at the top, then go to **Get Addons → Install from URL** and paste this repository's GitHub URL.
+4. WowUp picks up every new release automatically.
 
 ## Install manually
 1. Unzip so you get the folder `FishPartners` (containing `FishPartners.toc`).
