@@ -127,22 +127,45 @@ local function deliver(item)
         return true
     end
     if code == "AddonMessageThrottle" or code == "ChannelThrottle" then return false, true end -- retry later
+    if code == "AddOnMessageLockdown" then
+        -- the game blocks addon messages for a while (e.g. combat in an instance):
+        -- keep everything queued and try again shortly, nothing is lost
+        CM.stats.held = (CM.stats.held or 0) + 1
+        CM.stats.lastLock = time()
+        return false, true, true
+    end
     CM.stats.failed = CM.stats.failed + 1
     CM.stats.lastFail, CM.stats.lastFailT, CM.stats.lastFailChan = code, time(), item.chan
     return true -- give up on this one
 end
 
+local lockedUntil = 0
+local function chatRestricted()
+    -- modern clients can say up front whether addon chat is restricted right now
+    if C_RestrictedActions and C_RestrictedActions.IsAddOnRestrictionActive and Enum and Enum.AddOnRestrictionType
+        and Enum.AddOnRestrictionType.Chat then
+        local ok, r = pcall(C_RestrictedActions.IsAddOnRestrictionActive, Enum.AddOnRestrictionType.Chat)
+        if ok then return r end
+    end
+    return false
+end
+CM.ChatRestricted = function() return GetTime() < lockedUntil or chatRestricted() end
+
 local function pump()
     tokens = math.min(MAXTOK, tokens + 0.25 / REGEN)
+    if #queue == 0 or GetTime() < lockedUntil or chatRestricted() then return end
     while #queue > 0 and tokens >= 1 do
         local item = queue[1]
-        local done, retry = deliver(item)
+        local done, retry, locked = deliver(item)
+        if locked then lockedUntil = GetTime() + 3; break end
         if retry then tokens = 0; break end
         table.remove(queue, 1)
         tokens = tokens - 1
     end
 end
 C_Timer.NewTicker(0.25, pump)
+-- leaving combat usually lifts the block: try right away
+ns:On("PLAYER_REGEN_ENABLED", function() lockedUntil = 0; C_Timer.After(0.5, pump) end)
 
 -- Send to the group (chan nil) or a channel / whisper.
 -- tag: a queued message with the same tag is replaced (latest wins), e.g. session totals.
@@ -155,7 +178,13 @@ function CM:Send(msg, chan, target, tag)
         end
     end
     queue[#queue + 1] = { msg = msg, chan = chan, target = target, tag = tag }
-    if #queue > 40 then table.remove(queue, 1) end
+    if #queue > 60 then
+        -- long lockdown: drop the oldest message that a newer one makes redundant first
+        for i, q in ipairs(queue) do
+            if q.tag then table.remove(queue, i); break end
+        end
+        if #queue > 60 then table.remove(queue, 1) end
+    end
     pump()
 end
 
@@ -219,6 +248,10 @@ function CM:Print()
     local r = CM.Restricted()
     if r then P(ns.Color("red", "Your account is a " .. r .. " account: WoW Forever blocks it from sending addon messages.")) end
     P(("Sent: %d   ·   Failed: %d   ·   Waiting: %d   ·   Heard: %d"):format(CM.stats.sent, CM.stats.failed, #queue, CM.stats.heard))
+    if CM.stats.held then
+        P(ns.Color("grey", "Held back by the game " .. CM.stats.held .. "x (combat in instances); sent once allowed again" ..
+            (CM.ChatRestricted() and ns.Color("amber", " · blocked right now") or "") .. "."))
+    end
     if CM.stats.lastFail then
         P(ns.Color("red", "Last failure: ") .. CM.stats.lastFail .. " on " .. (CM.stats.lastFailChan or "?") ..
             ns.Color("grey", " (" .. date("%H:%M", CM.stats.lastFailT) .. ") " .. (EXPLAIN[CM.stats.lastFail] or "")))

@@ -349,8 +349,20 @@ function PT:RefreshView(pv)
             fills = st.lootCount or 0, value = st.items or 0, coin = (st.coin or 0) + (st.quest or 0), total = st.total or 0, gph = st.gph }
         for name, m in pairs(s.party or {}) do
             local ms = self:MemberStats(s, m)
-            list[#list + 1] = { name = name, m = m, class = m.class, fills = m.fills, value = ms.value, coin = ms.coin,
+            local r = { name = name, m = m, class = m.class, fills = m.fills, value = ms.value, coin = ms.coin,
                 total = ms.total, gph = ms.gph, reported = ms.reported, live = ms.live, present = m.present }
+            -- A member running Fish & Partners reports their own numbers: show those, so every
+            -- desk in the group shows the same board (our estimate stays in the tooltip)
+            local sy = m.sync
+            if sy and sy.total then
+                r.own = true
+                r.estValue, r.estCoin, r.estTotal = r.value, r.coin, r.total
+                r.value = sy.items or 0
+                r.coin = (sy.coin or 0) + (sy.quest or 0)
+                r.total = sy.total
+                r.gph = (sy.elapsed or 0) >= 60 and (sy.total / (sy.elapsed / 3600)) or nil
+            end
+            list[#list + 1] = r
         end
     end
     for _, r in ipairs(list) do partyTotal = partyTotal + r.total end
@@ -375,16 +387,22 @@ function PT:RefreshView(pv)
             selected = isSel,
             cells = {
                 label, tostring(r.fills), ns.MoneyShort(r.value),
-                r.you and ns.MoneyShort(r.coin) or ns.Color("grey", "~" .. ns.MoneyShort(r.coin)),
+                (r.you or r.own) and ns.MoneyShort(r.coin) or ns.Color("grey", "~" .. ns.MoneyShort(r.coin)),
                 ns.Color("white", ns.MoneyShort(r.total)),
                 partyTotal > 0 and ns.Color("amber", format("%.0f%%", 100 * r.total / partyTotal)) or "",
                 r.gph and ns.MoneyShort(r.gph) or ns.Color("dim", "--"),
             },
             tooltip = function(tt)
                 tt:AddLine(classColored(r.name, r.class) .. (r.you and " (you)" or ""))
+                if r.own then
+                    tt:AddLine("Numbers reported by their own desk" .. (r.live and "" or " (last report " .. (time() - r.m.sync.t) .. "s ago)"), 0.29, 0.96, 0.76)
+                end
                 tt:AddDoubleLine("Items looted (valued)", ns.Money(r.value), 0.8, 0.8, 0.8, 1, 1, 1)
-                tt:AddDoubleLine(r.you and "Coin + quests" or "Coin share (est.)", ns.Money(r.coin), 0.8, 0.8, 0.8, 1, 1, 1)
+                tt:AddDoubleLine((r.you or r.own) and "Coin + quests" or "Coin share (est.)", ns.Money(r.coin), 0.8, 0.8, 0.8, 1, 1, 1)
                 tt:AddDoubleLine("Total", ns.Money(r.total), 0.8, 0.8, 0.8, 1, 1, 1)
+                if r.own then
+                    tt:AddDoubleLine("Your desk's estimate", ns.Money(r.estTotal or 0), 0.6, 0.6, 0.6, 0.6, 0.6, 0.6)
+                end
                 if r.m and r.m.best then tt:AddDoubleLine("Top drop", r.m.best .. " " .. ns.MoneyShort(r.m.bestV or 0), 0.8, 0.8, 0.8) end
                 if r.reported then
                     tt:AddLine(" ")

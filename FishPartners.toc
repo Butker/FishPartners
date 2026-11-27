@@ -2,7 +2,7 @@
 ## Title: |cfffb8b1eFish & Partners|r Wealth Management
 ## Notes: Bloomberg-grade gold analytics. Intraday P&L, Net Worth, Portfolio, Reports, General Ledger.
 ## Author: Fish & Partners
-## Version: 2.1.4
+## Version: 2.1.5
 ## OptionalDeps: Auctionator
 ## SavedVariables: FishPartnersDB
 ## SavedVariablesPerCharacter: FishPartnersCharDB

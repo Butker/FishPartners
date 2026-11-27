@@ -50,6 +50,17 @@ check("'Baraca One' loot credited to Baraca-One", s.party["Baraca-One"] and s.pa
 -- prices from Céll accepted
 fire("CHAT_MSG_ADDON", "FPWM1", "P;2589;30;" .. math.floor(time() / 86400), "PARTY", "Céll Cat"); advance(1)
 check("Céll's price used", s.party["Baraca-One"].items[mkLink(2589)].unit == 30, tostring(s.party["Baraca-One"].items[mkLink(2589)].unit))
+-- the board shows Céll's own reported numbers (50000 total)
+local pv = CreateFrame("Frame", nil, UIParent)
+ns.Party:BuildView(pv)
+local captured
+local orig = pv.board.SetData
+pv.board.SetData = function(self, rows, ...) captured = rows; return orig(self, rows, ...) end
+ns.Party:RefreshView(pv)
+local cellRow
+for _, r in ipairs(captured or {}) do if tostring(r.cells[1]):find("Céll") then cellRow = r end end
+check("board shows Céll's reported total", cellRow and tostring(cellRow.cells[5]):find(ns.MoneyShort(50000), 1, true) ~= nil,
+  cellRow and tostring(cellRow.cells[5]))
 printed = {}
 SlashCmdList.FISHPARTNERS("sync"); advance(1)
 local out = table.concat(printed, "\n"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")

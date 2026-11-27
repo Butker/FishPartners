@@ -85,13 +85,25 @@ check("12 prices batched into few messages", nP <= 2 and recs >= 12, nP .. " msg
 fire("CHAT_MSG_ADDON", "FPWM1", "P;7001;111;" .. math.floor(time() / 86400) .. ";7002;222;" .. math.floor(time() / 86400), "PARTY", "Bob-LivingFlame")
 check("batched prices received", s.groupPrices[7001] and s.groupPrices[7002] and s.groupPrices[7002].p == 222)
 
--- the game refusing a message is recorded and explained
-mode = "lockdown"; CM:Send("X;locked"); advance(2); mode = "ok"
-check("failure recorded", CM.stats.lastFail == "AddOnMessageLockdown", tostring(CM.stats.lastFail))
+-- lockdown (combat in an instance): messages wait, nothing is lost
+sent = {}
+mode = "lockdown"; CM:Send("X;locked1"); CM:SendBatched("P", "9001;500;" .. math.floor(time() / 86400)); advance(10)
+check("nothing sent during lockdown", #sent == 0, #sent .. " sent")
+check("lockdown is not a failure", CM.stats.failed == 0 and (CM.stats.held or 0) > 0)
+mode = "ok"; fire("PLAYER_REGEN_ENABLED"); advance(3)
+local gotL, gotP = false, false
+for _, x in ipairs(sent) do if x.m == "X;locked1" then gotL = true end; if x.m:find("^P;9001") then gotP = true end end
+check("held messages delivered after combat", gotL and gotP)
+-- other refusals are still recorded
+mode = "general"
+C_ChatInfo.SendAddonMessage = (function(orig) return function(...) if mode == "general" then return 9 end return orig(...) end end)(C_ChatInfo.SendAddonMessage)
+CM:Send("X;bad"); advance(2); mode = "ok"
+check("failure recorded", CM.stats.lastFail == "GeneralError", tostring(CM.stats.lastFail))
 printed = {}
 SlashCmdList.FISHPARTNERS("sync"); advance(2)
 local out = table.concat(printed, "\n"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-check("/fp sync shows the failure", out:find("AddOnMessageLockdown") ~= nil)
+check("/fp sync shows the failure", out:find("GeneralError") ~= nil)
+check("/fp sync shows held messages", out:find("Held back by the game") ~= nil)
 check("/fp sync shows Bob was heard", out:find("Bob: heard") ~= nil)
 check("/fp sync shows Ann silent", out:find("Ann%-Pyrewood Village: nothing heard") ~= nil)
 check("/fp sync shows Bob's session totals", out:find("session totals: received") ~= nil)

@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.1.5] — Fix: messages during combat in dungeons
+- **Fix:** the game blocks addon messages at times inside dungeons and raids, especially in combat. The desk used to throw those messages away, so prices shared mid-fight were lost and items ended up with different prices. Now messages wait and go out as soon as the game allows (usually right after combat). `/fp sync` shows how many were held back.
+- **Party board:** members who run Fish & Partners now show the numbers their own desk reports (items, coin + quests, total, g/h), so everyone's board shows the same figures. Your own estimate of their loot is still in the tooltip.
+
 ## [2.1.4] — Fix: cross-realm names
 WoW Forever writes cross-realm names with a space ("Céll Cat") where the addon expected a hyphen ("Céll-Cat"). Because of that:
 - **Fixed:** messages from other desks were rejected ("couldn't match them to your group"), so there was no FP badge, no session totals and no house rules.
