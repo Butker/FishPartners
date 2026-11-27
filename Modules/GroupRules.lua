@@ -139,8 +139,8 @@ function G:Revalue(key)
 end
 
 -- An item dropped somewhere in the group: share our price if it's the newest we know of
-local function offerPrice(link)
-    if not G:InEffect() or #G:PeerList() == 0 then return end
+local function offerPrice(link, force)
+    if not G:InEffect() or (#G:PeerList() == 0 and not force) then return end
     if ns.Eligibility(link) ~= "count" then return end
     ns.WhenItemReady(link, function()
         local _, _, _, _, _, _, _, _, _, _, vendor, _, _, bindType = ns.GetItemInfo(link)
@@ -155,11 +155,25 @@ local function offerPrice(link)
             local remote = s.groupPrices and s.groupPrices[key]
             if remote and not better(ah, day, remote.p, remote.d) then return end
             local ls = lastSent[key]
-            if ls and ls.p == ah and ls.d == day and GetTime() - ls.t < 600 then return end
+            if not force and ls and ls.p == ah and ls.d == day and GetTime() - ls.t < 600 then return end
             lastSent[key] = { p = ah, d = day, t = GetTime() }
             ns.Comm:SendBatched("P", format("%s;%d;%d", tostring(key), floor(ah), day))
         end)
     end)
+end
+
+-- Everything already on the board (yours and the party's): used when house rules start
+-- or another desk joins, so items looted earlier end up with the same price too
+function G:ShareBoard()
+    local s = sess()
+    if not (s and s.groupRules) then return end
+    local seen = {}
+    local function offer(link)
+        local key = link and ns.ItemKey(link)
+        if key and not seen[key] then seen[key] = true; offerPrice(link, true) end
+    end
+    for link in pairs(s.items or {}) do offer(link) end
+    for _, m in pairs(s.party or {}) do for link in pairs(m.items or {}) do offer(link) end end
 end
 
 ns:On("CHAT_MSG_LOOT", function(msg)
@@ -219,6 +233,7 @@ function G:Check()
     s.groupRules = true
     s.groupPrices = s.groupPrices or {}
     self:Revalue(nil)
+    self:ShareBoard()
     self:Ring()
     ns.Print(ns.Color("orange", "Group loot rules in effect") .. " with " .. table.concat(self:PeerList(), ", ") ..
         ns.Color("grey", ". " .. self:RulesText() .. "."))
@@ -243,7 +258,10 @@ ns:On("CHAT_MSG_ADDON", function(prefix, text, _, sender)
     if kind ~= "H" and kind ~= "P" and kind ~= "S" then return end
     local isNew = not G.peers[name]
     G.peers[name] = GetTime()
-    if isNew and kind == "H" then hello() end -- let them know about us too
+    if isNew then
+        if kind == "H" then hello() end -- let them know about us too
+        if G:InEffect() then C_Timer.After(2, function() G:ShareBoard() end) end -- bring the new desk up to date
+    end
     if kind == "P" then
         local s = sess()
         if not (s and s.active and s.groupRules) then G:Check(); s = sess() end

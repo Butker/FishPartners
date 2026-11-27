@@ -94,6 +94,9 @@ local out = table.concat(printed, "\n"):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r"
 check("/fp sync shows the failure", out:find("AddOnMessageLockdown") ~= nil)
 check("/fp sync shows Bob was heard", out:find("Bob: heard") ~= nil)
 check("/fp sync shows Ann silent", out:find("Ann%-Pyrewood Village: nothing heard") ~= nil)
+check("/fp sync shows Bob's session totals", out:find("session totals: received") ~= nil)
+check("/fp sync shows house rules state", out:find("House rules: ON") ~= nil, out:match("House rules:[^\n]*"))
+check("/fp sync shows the raw sender", out:find("as Bob%-LivingFlame") ~= nil)
 local ping = false
 for _, x in ipairs(sent) do if x.m:find("^I;") then ping = true end end
 check("/fp sync sends a ping", ping)

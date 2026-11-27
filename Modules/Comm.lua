@@ -76,6 +76,10 @@ function CM.Who(sender)
     if not sender or sender == "" then return nil end
     local roster = ns.Party and ns.Party.Roster() or {}
     if roster[sender] then return sender end
+    if Ambiguate then
+        local ok, short = pcall(Ambiguate, sender, "none")
+        if ok and short and roster[short] then return short end
+    end
     local base, realm = sender:match("^([^%-]+)%-(.+)$")
     if not base then return sender end
     if roster[base] then return base end
@@ -85,6 +89,11 @@ function CM.Who(sender)
     end
     local mine = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName() or ""):gsub("[%s']", "")
     if realm == mine then return base end
+    -- last resort: same character name, ignoring case and realm
+    local lb = base:lower()
+    for key in pairs(roster) do
+        if (key:match("^([^%-]+)") or key):lower() == lb then return key end
+    end
     return sender
 end
 
@@ -167,7 +176,11 @@ ns:On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     local who = CM.Who(sender) or "?"
     local roster = ns.Party and ns.Party.Roster() or {}
     local f = CM.stats.from[who] or { n = 0 }
-    f.n, f.t, f.chan, f.kind = f.n + 1, time(), channel, type(text) == "string" and text:match("^(%a)") or "?"
+    local kind = type(text) == "string" and text:match("^(%a)") or "?"
+    f.n, f.t, f.chan, f.raw = f.n + 1, time(), channel, sender
+    f.kinds = f.kinds or {}
+    f.kinds[kind] = (f.kinds[kind] or 0) + 1
+    if f.n == 1 then C_Timer.After(0.5, function() ns:RefreshPage("pnl") end) end
     if not roster[who] and channel ~= "GUILD" and channel ~= "WHISPER" then
         f.outside = true
         CM.stats.unknown[sender] = time()
@@ -201,17 +214,48 @@ function CM:Print()
             ns.Color("grey", " (" .. date("%H:%M", CM.stats.lastFailT) .. ") " .. (EXPLAIN[CM.stats.lastFail] or "")))
     end
     local roster = ns.Party and ns.Party.Roster() or {}
+    local s = ns.cdb and ns.cdb.session
     local any = false
+    local KIND = { S = "session", H = "hello", P = "prices", V = "version", I = "ping", O = "pong" }
     for name in pairs(roster) do
         any = true
         local f = CM.stats.from[name]
         if f then
-            P("  " .. name .. ": " .. ns.Color("green", "heard " .. f.n .. "x") .. ns.Color("grey", ", last " .. (time() - f.t) .. "s ago on " .. tostring(f.chan)))
+            local k = {}
+            for kind, n in pairs(f.kinds or {}) do k[#k + 1] = (KIND[kind] or kind) .. " " .. n end
+            table.sort(k)
+            P("  " .. name .. ": " .. ns.Color("green", "heard " .. f.n .. "x") ..
+                ns.Color("grey", " (" .. table.concat(k, ", ") .. "), last " .. (time() - f.t) .. "s ago on " .. tostring(f.chan) .. ", as " .. tostring(f.raw)))
         else
             P("  " .. name .. ": " .. ns.Color("grey", "nothing heard (not running Fish & Partners 2.1+, or their messages can't get through)"))
         end
+        local m = s and s.active and s.party and s.party[name]
+        if s and s.active then
+            if m and m.sync then
+                P("     session totals: " .. ns.Color("green", "received " .. (time() - m.sync.t) .. "s ago") ..
+                    ((time() - m.sync.t) < 90 and " (FP badge on)" or ns.Color("amber", " (too old for the badge)")))
+            else
+                P("     session totals: " .. ns.Color("amber", "none yet") .. ns.Color("grey", " (they need a running session)"))
+            end
+        end
     end
     if not any then P(ns.Color("grey", "  (no group members)")) end
+    -- you: who would see your desk
+    P("Your session: " .. ((s and s.active) and ns.Color("green", "running") or ns.Color("amber", "not running (nothing to sync, no house rules)")))
+    if ns.Group then
+        local G = ns.Group
+        local peers = G:PeerList()
+        local why
+        if G:InEffect() then
+            local n = 0
+            for _ in pairs(s.groupPrices or {}) do n = n + 1 end
+            why = ns.Color("green", "ON") .. ns.Color("grey", " · " .. n .. " prices shared · desks: " .. (#peers > 0 and table.concat(peers, ", ") or "none right now"))
+        elseif not (s and s.active) then why = ns.Color("amber", "off: no session running")
+        elseif ns.S.groupRules == false then why = ns.Color("amber", "off: switched off on the Compliance tab")
+        elseif #peers == 0 then why = ns.Color("amber", "off: no other desk identified in your group yet")
+        else why = ns.Color("amber", "off (unknown reason)") end
+        P("House rules: " .. why)
+    end
     for sender in pairs(CM.stats.unknown) do
         P(ns.Color("amber", "  Heard from " .. sender .. " but couldn't match them to your group.") .. ns.Color("grey", " Please report this."))
     end

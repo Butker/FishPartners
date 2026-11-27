@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.3] — Fix: same prices for loot from before house rules
+- **Fix:** items looted before house rules started (or before a friend's desk joined) kept each person's own price. Now every item already on your board and the party board is shared too, so the whole session ends up on the newest scan.
+- `/fp sync` now shows the full chain for each member: what was heard (session, hello, prices…), whether their session totals arrived and are fresh enough for the FP badge, your session state, and whether house rules are on and why not.
+- More forgiving name matching between desks; the party board refreshes as soon as another desk is heard.
+
 ## [2.1.2] — Fix: party sync between desks
 Party sync, the FP badge and group loot rules all depend on hidden messages between your desks. 2.1.2 makes those messages much more reliable and tells you when they can't get through.
 

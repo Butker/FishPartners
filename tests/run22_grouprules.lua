@@ -20,7 +20,7 @@ for line in toc:gmatch("[^\r\n]+") do if not line:match("^##") and line:match("%
 Auctionator.API.v1.GetAuctionAgeByItemLink = function(c, l) return ages[tonumber(l:match("item:(%d+)"))] end
 fire("PLAYER_LOGIN"); advance(25)
 local function check(name, cond, detail) print((cond and "PASS " or "FAIL ") .. name .. (detail and ("  [" .. detail .. "]") or "")) end
-local function lastSent(prefix) for i = #sent, 1, -1 do if sent[i]:sub(1, #prefix) == prefix then return sent[i] end end end
+local function lastSent(prefix) for i = #sent, 1, -1 do if sent[i]:sub(1, #prefix) == prefix then return sent[i] end end return nil end
 local today = math.floor(time() / 86400)
 local LINEN, ORE = mkLink(2589), mkLink(2770)
 
@@ -39,10 +39,13 @@ fire("CHAT_MSG_ADDON", "FPWM1", "H;2.1.0", "PARTY", "Bob"); advance(2)
 check("house rules switch on", s.groupRules == true)
 check("earlier loot re-marked with house rules", bob.items[LINEN].unit == 14 and s.partyTape[1].v == 140, bob.items[LINEN].unit .. " / " .. s.partyTape[1].v)
 check("bell toast shown", FishPartnersHouseRules and FishPartnersHouseRules:IsShown())
+advance(3)
+check("board shared when rules start (loot from before)", lastSent("P;2589;") == ("P;2589;14;" .. (today - 3)), tostring(lastSent("P;2589;")))
+sent = {}
 
 -- my linen drops: my scan (3 days old) is the best the group has, so I share it
 fire("CHAT_MSG_LOOT", "You receive loot: " .. LINEN .. "x2."); advance(3)
-check("I share my price", lastSent("P;2589;") == ("P;2589;14;" .. (today - 3)), tostring(lastSent("P;2589;")))
+check("already shared: not sent twice", lastSent("P;2589;") == nil, tostring(lastSent("P;2589;")))
 -- Bob has a newer scan
 fire("CHAT_MSG_ADDON", "FPWM1", "P;2589;20;" .. today, "PARTY", "Bob"); advance(1)
 check("newer scan wins for my items", s.items[LINEN].unit == 20, tostring(s.items[LINEN].unit))
