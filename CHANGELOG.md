@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.4] — Fix: cross-realm names
+WoW Forever writes cross-realm names with a space ("Céll Cat") where the addon expected a hyphen ("Céll-Cat"). Because of that:
+- **Fixed:** messages from other desks were rejected ("couldn't match them to your group"), so there was no FP badge, no session totals and no house rules.
+- **Fixed:** your desk answered its own messages.
+- **Fixed:** loot lines like "Baraca One receives loot" weren't credited to that member on the party board.
+
 ## [2.1.3] — Fix: same prices for loot from before house rules
 - **Fix:** items looted before house rules started (or before a friend's desk joined) kept each person's own price. Now every item already on your board and the party board is shared too, so the whole session ends up on the newest scan.
 - `/fp sync` now shows the full chain for each member: what was heard (session, hello, prices…), whether their session totals arrived and are fresh enough for the FP badge, your session state, and whether house rules are on and why not.

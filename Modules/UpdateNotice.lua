@@ -59,8 +59,7 @@ ns:On("CHAT_MSG_ADDON", function(prefix, text, channel, sender)
     if prefix ~= PREFIX or type(text) ~= "string" then return end
     local kind, version = strsplit(";", text)
     if kind ~= "V" or not version then return end
-    local me = UnitName("player")
-    if sender and (sender == me or sender:match("^([^%-]+)") == me) then return end
+    if not sender or ns.Comm.IsMe(sender) then return end
     local cmp = U.Compare(ns.VERSION, version)
     if cmp == nil then return end
     if cmp < 0 then

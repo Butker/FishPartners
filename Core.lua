@@ -198,6 +198,20 @@ ns.HEX = {
 }
 function ns.Color(hexKey, text) return "|c" .. ns.HEX[hexKey] .. text .. "|r" end
 
+-- Player names arrive in different shapes: "Name", "Name-Realm", "Name Realm" (WoW Forever
+-- writes cross-realm names with a space), realms with or without spaces/apostrophes.
+-- BaseName = the character name alone; NameKey = name+realm squashed for comparing.
+-- (Character names never contain spaces or hyphens.)
+function ns.BaseName(s)
+    if type(s) ~= "string" then return nil end
+    s = s:gsub("\194\160", " ")
+    return s:match("^([^%s%-]+)")
+end
+function ns.NameKey(s)
+    if type(s) ~= "string" then return nil end
+    return (s:gsub("\194\160", ""):gsub("[%s%-']", ""):lower())
+end
+
 function ns.Print(msg)
     DEFAULT_CHAT_FRAME:AddMessage("|cfffb8b1eF&P|r |cff85858f>|r " .. tostring(msg))
 end

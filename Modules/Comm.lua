@@ -80,26 +80,36 @@ function CM.Who(sender)
         local ok, short = pcall(Ambiguate, sender, "none")
         if ok and short and roster[short] then return short end
     end
-    local base, realm = sender:match("^([^%-]+)%-(.+)$")
+    -- same name + realm, whatever the separator ("Céll Cat" = "Céll-Cat")
+    local nk = ns.NameKey(sender)
+    for key in pairs(roster) do
+        if ns.NameKey(key) == nk then return key end
+    end
+    local base = ns.BaseName(sender)
     if not base then return sender end
     if roster[base] then return base end
+    -- same character name (ignoring case), if only one member has it
+    local found, n = nil, 0
     for key in pairs(roster) do
-        local kb, kr = key:match("^([^%-]+)%-(.+)$")
-        if kb == base and kr and kr:gsub("[%s']", "") == realm:gsub("[%s']", "") then return key end
+        if (ns.BaseName(key) or key):lower() == base:lower() then found, n = key, n + 1 end
     end
-    local mine = (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName() or ""):gsub("[%s']", "")
-    if realm == mine then return base end
-    -- last resort: same character name, ignoring case and realm
-    local lb = base:lower()
-    for key in pairs(roster) do
-        if (key:match("^([^%-]+)") or key):lower() == lb then return key end
-    end
+    if n == 1 then return found end
+    -- someone from your own realm who isn't in the group (guild, whisper)
+    local mine = ns.NameKey((GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName()) or "")
+    if mine ~= "" and nk == ns.NameKey(base) .. mine then return base end
     return sender
 end
 
 function CM.IsMe(sender)
+    if not sender then return false end
     local me = UnitName("player")
-    return sender == me or (sender and sender:match("^([^%-]+)") == me and CM.Who(sender) == me)
+    if sender == me then return true end
+    local realm = (UnitFullName and select(2, UnitFullName("player"))) or
+        (GetNormalizedRealmName and GetNormalizedRealmName()) or (GetRealmName and GetRealmName()) or ""
+    local nk = ns.NameKey(sender)
+    if realm ~= "" and nk == ns.NameKey(me .. realm) then return true end
+    -- no realm in the sender: just the name
+    return nk == ns.NameKey(me)
 end
 
 local function deliver(item)

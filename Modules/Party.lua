@@ -147,9 +147,13 @@ local function resolveLooter(roster, guid, nameArg, textName)
         local cand = plainName(i == 1 and nameArg or textName)
         if cand and cand ~= "" then
             if roster[cand] then return cand end
-            local base = cand:match("^([^%-]+)")
+            -- "Baraca One" / "Baraca-One" / "Baraca": same person
+            local nk, base = ns.NameKey(cand), ns.BaseName(cand)
             for key in pairs(roster) do
-                if key:match("^([^%-]+)") == base then return key end
+                if ns.NameKey(key) == nk then return key end
+            end
+            for key in pairs(roster) do
+                if ns.BaseName(key) == base then return key end
             end
         end
     end
