@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.1.2] — Fix: party sync between desks
+Party sync, the FP badge and group loot rules all depend on hidden messages between your desks. 2.1.2 makes those messages much more reliable and tells you when they can't get through.
+
+- **New `/fp sync`** shows which group members your desk hears, what was sent, and the exact reason if the game refused a message. It also pings the group, so you can see that the link works both ways. If sync doesn't work, both of you type `/fp sync`.
+- **Trial and veteran accounts:** since WoW Forever 1.60.1 these can't send addon messages. The addon now detects this and tells you, instead of silently failing.
+- Messages are paced under the game's limit. A loot burst used to send one message per drop and could get everything dropped, including session totals. Prices are now bundled into one message and session totals replace older queued ones.
+- Group Finder groups now use instance chat, which the game requires there.
+- Senders are matched to your party board reliably, including realm names with spaces.
+- The FP badge also shows (in grey) for members who run the addon but have no session running.
+
 ## [2.1.1] — Hotfix: market prices
 - **Fix:** Portfolio (and session) market prices could be lower than Auctionator's price. The thin-market cap from 2.0 capped items at 50× their vendor price until the addon had its own price history, and at 3× the recent median after that. Items with a small vendor price were undervalued, e.g. a 60g item shown as 49g. The cap is gone: values are Auctionator's price again.
 - Unusual prices (more than 3× the item's 14-day median) are now only flagged in tooltips, never changed.

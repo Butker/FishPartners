@@ -27,26 +27,16 @@ local lastSent = {} -- key -> { p, d, t }
 
 local function sess() return ns.cdb and ns.cdb.session end
 local function today() return floor(time() / 86400) end
-local send = (C_ChatInfo and C_ChatInfo.SendAddonMessage) or SendAddonMessage
-local function chan() return (IsInRaid and IsInRaid()) and "RAID" or "PARTY" end
 local function grouped() return IsInGroup and IsInGroup() end
-
-local function say(msg)
-    if not grouped() or not send then return end
-    if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX) end
-    pcall(send, PREFIX, msg, chan())
-end
+local function say(msg, tag) if grouped() then ns.Comm:Send(msg, nil, nil, tag) end end
 
 ---------------------------------------------------------------------------
 -- Who runs Fish & Partners
 ---------------------------------------------------------------------------
 local function rosterName(sender)
-    if not sender then return nil end
+    local name = ns.Comm.Who(sender)
     local roster = ns.Party and ns.Party.Roster() or {}
-    if roster[sender] then return sender end
-    local short = sender:match("^([^%-]+)")
-    if short and roster[short] then return short end
-    return nil
+    return name and roster[name] and name or nil
 end
 
 function G:PeerList()
@@ -167,7 +157,7 @@ local function offerPrice(link)
             local ls = lastSent[key]
             if ls and ls.p == ah and ls.d == day and GetTime() - ls.t < 600 then return end
             lastSent[key] = { p = ah, d = day, t = GetTime() }
-            say(format("P;%s;%d;%d", tostring(key), floor(ah), day))
+            ns.Comm:SendBatched("P", format("%s;%d;%d", tostring(key), floor(ah), day))
         end)
     end)
 end
@@ -242,14 +232,14 @@ local function hello(force)
     if not grouped() then return end
     if not force and GetTime() - lastHello < 10 then return end
     lastHello = GetTime()
-    say("H;" .. (ns.VERSION or "dev"))
+    say("H;" .. (ns.VERSION or "dev"), "H")
 end
 
 ns:On("CHAT_MSG_ADDON", function(prefix, text, _, sender)
     if prefix ~= PREFIX or type(text) ~= "string" then return end
     local name = rosterName(sender)
-    if not name or name == UnitName("player") then return end
-    local kind, a, b, c = strsplit(";", text)
+    if not name or ns.Comm.IsMe(sender) then return end
+    local kind = strsplit(";", text)
     if kind ~= "H" and kind ~= "P" and kind ~= "S" then return end
     local isNew = not G.peers[name]
     G.peers[name] = GetTime()
@@ -258,14 +248,19 @@ ns:On("CHAT_MSG_ADDON", function(prefix, text, _, sender)
         local s = sess()
         if not (s and s.active and s.groupRules) then G:Check(); s = sess() end
         if not (s and s.groupRules) then return end
-        local key = tonumber(a) or a
-        local p, d = tonumber(b), tonumber(c)
-        if not (key and p and d) or p <= 0 then return end
+        -- P;key;price;day[;key;price;day...]  (several drops in one message)
+        local f = { strsplit(";", text) }
         s.groupPrices = s.groupPrices or {}
-        local cur = s.groupPrices[key]
-        if better(p, d, cur and cur.p, cur and cur.d) then
-            s.groupPrices[key] = { p = p, d = d, from = name }
-            G:Revalue(key)
+        for i = 2, #f - 2, 3 do
+            local key = tonumber(f[i]) or f[i]
+            local p, d = tonumber(f[i + 1]), tonumber(f[i + 2])
+            if key and key ~= "" and p and d and p > 0 then
+                local cur = s.groupPrices[key]
+                if better(p, d, cur and cur.p, cur and cur.d) then
+                    s.groupPrices[key] = { p = p, d = d, from = name }
+                    G:Revalue(key)
+                end
+            end
         end
         return
     end

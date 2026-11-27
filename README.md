@@ -95,6 +95,7 @@ Auctionator is optional but recommended. Without it everything is valued at vend
 - **Ledger:** right-click an entry to change its category or delete it.
 
 ## Troubleshooting
+- Party sync, the FP badge or group loot rules not working? Both of you type `/fp sync`. It shows what your desk hears and the reason if the game refuses a message. Trial and veteran accounts can't send addon messages on WoW Forever.
 - Type `/fp check` to run the self-checks (gold balance, session, cost basis, inventory). They also run on their own after login and every hour, and say something only when there's a problem.
 - Type `/fp diag` and send the output. It shows which AH API your client has, which AH events the addon has seen, whether it can read your sell slot, and any recent errors.
 - If a page hits an error, it now shows the error text at the bottom instead of going blank.

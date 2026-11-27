@@ -209,36 +209,20 @@ end)
 ---------------------------------------------------------------------------
 -- Desk-to-desk sync (party members running Fish & Partners)
 ---------------------------------------------------------------------------
-local registered
-local function ensurePrefix()
-    if registered then return end
-    if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
-        pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX)
-    elseif RegisterAddonMessagePrefix then
-        pcall(RegisterAddonMessagePrefix, PREFIX)
-    end
-    registered = true
-end
-
 local function broadcast()
     if not (IsInGroup and IsInGroup()) or not ns.Session then return end
     local st = ns.Session:Stats()
     if not st.active then return end
-    ensurePrefix()
     local msg = format("S;%d;%d;%d;%d;%d", floor(st.total or 0), floor(st.coin or 0), floor(st.quest or 0),
         floor(st.items or 0), floor(st.elapsed or 0))
-    local chan = (IsInRaid and IsInRaid()) and "RAID" or "PARTY"
-    local send = (C_ChatInfo and C_ChatInfo.SendAddonMessage) or SendAddonMessage
-    if send then pcall(send, PREFIX, msg, chan) end
+    ns.Comm:Send(msg, nil, nil, "S") -- a newer total replaces one still waiting to go out
 end
 
 ns:On("CHAT_MSG_ADDON", function(prefix, text, _, sender)
     if prefix ~= PREFIX or type(text) ~= "string" then return end
     local s = sess()
-    if not (s and s.active) or not sender then return end
-    local myRealm = GetRealmName and GetRealmName() or ""
-    local name = sender:gsub("%-" .. myRealm:gsub("%s", ""):gsub("([%-%.%+%*%?%[%]%^%$%(%)%%])", "%%%1") .. "$", "")
-    if name == UnitName("player") then return end
+    if not (s and s.active) or not sender or ns.Comm.IsMe(sender) then return end
+    local name = ns.Comm.Who(sender)
     local kind, total, coin, quest, items, elapsed = strsplit(";", text)
     if kind ~= "S" then return end
     local roster = PT.Roster()
@@ -250,7 +234,6 @@ ns:On("CHAT_MSG_ADDON", function(prefix, text, _, sender)
 end)
 
 ns:OnInit(function()
-    ensurePrefix()
     C_Timer.NewTicker(20, broadcast)
 end)
 ns:Listen("SESSION_UPDATE", function()
@@ -378,7 +361,9 @@ function PT:RefreshView(pv)
     for _, r in ipairs(list) do
         local label = classColored(r.name, r.class)
         if r.you then label = ns.Color("orange", "» ") .. label .. ns.Color("dim", " (you)") end
-        if r.live then label = label .. ns.Color("green", " FP") end
+        local heard = not r.you and ns.Comm and ns.Comm.stats.from[r.name]
+        if r.live then label = label .. ns.Color("green", " FP")
+        elseif heard and time() - heard.t < 900 then label = label .. ns.Color("grey", " FP") end
         if r.present == false then label = label .. ns.Color("dim", " left") end
         local isSel = (r.you and selected == ME) or (not r.you and r.name == selected)
         if isSel then label = ns.Color("amber", "> ") .. label end
@@ -464,5 +449,5 @@ function PT:RefreshView(pv)
         ((s and s.groupRules) and (ns.Color("orange", "House rules in effect: ") .. "everyone's desk values items with the same rules and the newest AH scan in the group.\n\n")
             or "Items: tracked from loot messages, valued with your pricing rules.\n\n") ..
         "Coin*: the game doesn't show other players' coin. Group coin is split evenly, so each member's share is estimated from yours while they were in the group.\n\n" ..
-        ns.Color("green", "FP") .. " = member runs Fish & Partners. Hover them for their exact session P&L, quests included.")
+        ns.Color("green", "FP") .. " = member runs Fish & Partners (grey: no session running). Hover them for their exact session P&L. Not showing? Both type /fp sync.")
 end

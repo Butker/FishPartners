@@ -322,6 +322,7 @@ COMMANDS = {
     PORT = function() ns:ShowPage("port") end,
     RPT = function() ns:ShowPage("rpt") end,
     HUD = function() if ns.HUD then ns.HUD:Toggle() end end,
+    SYNC = function() if ns.Comm then ns.Comm:Print() end end,
     RULES = function() if ns.Group then ns.Group:Print() end end,
     CHECK = function() if ns.Audit then ns.Audit:Print() end end,
     UPDATE = function()

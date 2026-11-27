@@ -28,11 +28,9 @@ function U.Compare(a, b)
     return 0
 end
 
-local send = (C_ChatInfo and C_ChatInfo.SendAddonMessage) or SendAddonMessage
 local function say(chan, target)
-    if not send or ns.VERSION == "dev" then return end
-    if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then pcall(C_ChatInfo.RegisterAddonMessagePrefix, PREFIX) end
-    pcall(send, PREFIX, "V;" .. ns.VERSION, chan, target)
+    if ns.VERSION == "dev" then return end
+    ns.Comm:Send("V;" .. ns.VERSION, chan, target, "V" .. tostring(chan) .. tostring(target))
 end
 
 local lastGroupSend = 0
@@ -40,7 +38,7 @@ local function announceGroup()
     if not (IsInGroup and IsInGroup()) then return end
     if GetTime() - lastGroupSend < 60 then return end
     lastGroupSend = GetTime()
-    say((IsInRaid and IsInRaid()) and "RAID" or "PARTY")
+    say(ns.Comm.GroupChannel())
 end
 
 local function announceGuild()
