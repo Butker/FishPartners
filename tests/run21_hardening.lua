@@ -46,7 +46,13 @@ check("suffix gear gets its own key", ns.ItemKey(SUFFIX) == "1234:-19", tostring
 check("plain item key is the id", ns.ItemKey(TB) == 12359)
 check("clam is a container", ns.Eligibility(CLAM) == "zero")
 local v, src, _, _, _, info = ns.Valuate(CHEAP)
-check("thin market capped at 50x vendor", v == 5000 and info.capped, ns.MoneyShort(v) .. " " .. tostring(src))
+check("value is exactly Auctionator's price (no cap)", v == 99990000 and src == "AH", ns.MoneyShort(v) .. " " .. tostring(src))
+-- with 14 days of history around 10g, a 99g price is flagged but not changed
+ns.db.prices[4000] = {}
+for i = 1, 5 do ns.db.prices[4000][date("%Y-%m-%d", time() - i * 86400)] = 100000 end
+ahPrices[4000] = 990000
+v, src, _, _, _, info = ns.Valuate(CHEAP)
+check("unusual price flagged, value unchanged", v == 990000 and info.unusual and ns.ValuationNote(info):find("9.9x"), tostring(ns.ValuationNote(info)))
 
 -- session: clam (0) -> open -> pearl counts once
 fire("CHAT_MSG_LOOT", "You receive loot: " .. CLAM .. "."); advance(1)

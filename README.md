@@ -37,7 +37,7 @@ Auctionator is optional but recommended. Without it everything is valued at vend
 
 ## Valuation policy
 1. Quest items aren't tracked. Containers (clams, lockboxes) count as 0 until opened. Soulbound / BoP items → vendor price.
-2. Thin markets are capped: an AH price can be at most 3× its recent median, or 50× vendor when there's no history yet. AH prices older than 7 days (adjustable) are marked stale.
+2. The AH price is Auctionator's price, unchanged. Prices more than 3× the item's 14-day median are flagged as unusual in tooltips, and AH prices older than 7 days (adjustable) are marked stale.
 3. Otherwise read Auctionator's last scan price.
 4. Use the AH price only if it beats vendor by:
    - **Weapons & armor:** 10% (adjustable)

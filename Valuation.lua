@@ -17,7 +17,8 @@
 --   * bound / BoP items: vendor price
 --   * otherwise the Auctionator price if it beats vendor by the premium setting
 --     (gear 10%, everything else 5%), else vendor price
---   * thin-market cap: an AH price is capped at 3x the item's recent median
+--   * unusual prices: an AH price above 3x the item's 14-day median is flagged in tooltips
+--     (never changed: the value is always Auctionator's price)
 --     (14 days of daily prices), or 50x vendor price when there's no history yet
 --   * stale flag: Auctionator prices older than the "stale after" setting are marked
 
@@ -158,7 +159,7 @@ function ns.GetAHAge(link)
     if ok and type(age) == "number" then return age end
 end
 
--- Daily AH price memory per item key (feeds the thin-market cap)
+-- Daily AH price memory per item key (feeds the unusual-price flag)
 local function priceStore()
     if not ns.db then return nil end
     ns.db.prices = ns.db.prices or {}
@@ -201,10 +202,10 @@ end)
 -- Valuate
 -- Returns: unitValue, source, ahPrice, vendorPrice, isGear, info
 --   source = "AH" | "VND" | "BOX" (container) | "---"
---   info   = { capped = bool, stale = bool, age = days, cap = copper }
+--   info   = { unusual = ratio vs 14-day median, stale = bool, age = days, from = name }
 ---------------------------------------------------------------------------
--- Your own market price for an item: Auctionator's price, thin-market capped.
--- Returns ahPrice (or nil), info { age, stale, capped, cap }
+-- Your own market price for an item: exactly Auctionator's price.
+-- Returns ahPrice (or nil), info { age, stale, unusual }
 function ns.MarketPrice(link, vendor)
     local info = {}
     local key = ns.ItemKey(link)
@@ -213,16 +214,10 @@ function ns.MarketPrice(link, vendor)
     local age = ns.GetAHAge(link)
     info.age = age
     info.stale = age ~= nil and age > ((ns.S and ns.S.priceStaleDays) or 7)
-    -- remember fresh prices (today's scan) for the thin-market cap
+    -- remember fresh prices (today's scan) so unusual spikes can be flagged
     if age == nil or age <= 1 then recordPrice(key, ah) end
     local med = ns.RecentMedian(key, 14)
-    local cap
-    if med then cap = med * 3
-    elseif (vendor or 0) > 0 then cap = vendor * 50 end
-    if cap and ah > cap then
-        info.capped, info.cap = true, cap
-        ah = cap
-    end
+    if med and med > 0 and ah > med * 3 then info.unusual = ah / med end
     return ah, info
 end
 
@@ -265,7 +260,7 @@ function ns.SessionValuate(link, isBound) return ns.Valuate(link, isBound) end
 function ns.ValuationNote(info)
     if not info then return nil end
     local parts = {}
-    if info.capped then parts[#parts + 1] = "capped at " .. ns.MoneyShort(info.cap) .. " (thin market)" end
+    if info.unusual then parts[#parts + 1] = format("unusual price: %.1fx its 14-day median", info.unusual) end
     if info.from then parts[#parts + 1] = "price from " .. info.from .. "'s scan" .. (info.age and (info.age == 0 and " (today)" or (" (" .. info.age .. "d old)")) or "") end
     if info.stale then parts[#parts + 1] = "AH price " .. (info.age or "?") .. " days old" end
     if #parts == 0 then return nil end

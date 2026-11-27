@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.1] — Hotfix: market prices
+- **Fix:** Portfolio (and session) market prices could be lower than Auctionator's price. The thin-market cap from 2.0 capped items at 50× their vendor price until the addon had its own price history, and at 3× the recent median after that. Items with a small vendor price were undervalued, e.g. a 60g item shown as 49g. The cap is gone: values are Auctionator's price again.
+- Unusual prices (more than 3× the item's 14-day median) are now only flagged in tooltips, never changed.
+- Portfolio tooltips have a new *Market price* section: Auctionator price, vendor price, what it's valued at and why.
+
 ## [2.1.0] — House rules for groups
 When you're in a group with friends who also run Fish & Partners, your party numbers now agree.
 

@@ -991,6 +991,21 @@ local function buildRows(p, scopeKey, loc, indent)
                 },
                 tooltip = function(tt)
                     if link then pcall(tt.SetHyperlink, tt, link) else tt:AddLine(name) end
+                    if link then
+                        local _, vs, vah, vven, _, vinfo = ns.Valuate(link, a.bound)
+                        tt:AddLine(" ")
+                        tt:AddLine("Market price", 0.98, 0.55, 0.12)
+                        tt:AddDoubleLine("Auctionator", vah and ns.MoneyShort(vah) or "no price", 0.8, 0.8, 0.8, 1, 1, 1)
+                        tt:AddDoubleLine("Vendor", ns.MoneyShort(vven or 0), 0.8, 0.8, 0.8, 1, 1, 1)
+                        tt:AddDoubleLine("Valued at", ns.MoneyShort(unit) .. "  (" .. (vs or "---") .. ")", 0.8, 0.8, 0.8, 1, 1, 1)
+                        if vs == "VND" and vah then
+                            tt:AddLine("AH price doesn't beat vendor by your margin, so it's valued at vendor.", 0.6, 0.6, 0.6, true)
+                        elseif vs == "AH" and vah and unit < vah then
+                            tt:AddLine("AH cut deducted (Compliance tab).", 0.6, 0.6, 0.6, true)
+                        end
+                        local note = ns.ValuationNote(vinfo)
+                        if note then tt:AddLine(note, 1, 0.75, 0.2, true) end
+                    end
                     tt:AddLine(" ")
                     tt:AddLine("Where it is", 0.98, 0.55, 0.12)
                     for key, ch in pairs(ns.db.chars) do
